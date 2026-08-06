@@ -517,9 +517,6 @@ async def mute(interaction: discord.Interaction, member: discord.Member, duratio
 if __name__ == "__main__":
     keep_alive()
     TOKEN = os.environ.get("DISCORD_TOKEN")
-    if not TOKEN:
-        print("❌ Ошибка: Не найден токен бота в переменных окружения (DISCORD_TOKEN).")
-    else:
     class RoomSettingsSelect(discord.ui.Select):
     def __init__(self):
         options = [
@@ -555,5 +552,9 @@ async def setup_settings(ctx):
         await ctx.message.delete()
     except:
         pass
-            bot.run(TOKEN)
+        
+        if not TOKEN:
+    print("❌ Ошибка: Не найден токен бота в переменных окружения (DISCORD_TOKEN).")
+else:
+    bot.run(TOKEN)
         
