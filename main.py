@@ -1,12 +1,16 @@
 import os
 import asyncio
 import datetime
+import sqlite3
 import discord
 from discord.ext import commands
 from discord import app_commands
 import yt_dlp
 from threading import Thread
 from flask import Flask
+
+# Импортируем функционал приваток из privates.py
+from privates import CreateRoomButtonView, on_voice_state_update
 
 # ---------------------------------------------------------
 # 0. ВЕБ-СЕРВЕР ДЛЯ ПРЕДОТВРАЩЕНИЯ ОТКЛЮЧЕНИЯ НА RENDER
@@ -26,11 +30,36 @@ def keep_alive():
     t.start()
 
 # ---------------------------------------------------------
-# 1. Настройки Intents и Инициализация
+# 1. БАЗА ДАННЫХ (ЭКОНОМИКА, ЕЖЕДНЕВНЫЕ НАГРАДЫ И МАГАЗИН)
+# ---------------------------------------------------------
+def init_db():
+    conn = sqlite3.connect('economy.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            points INTEGER DEFAULT 0,
+            last_reward TEXT DEFAULT "2000-01-01"
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS shop_roles (
+            role_id INTEGER PRIMARY KEY,
+            price INTEGER NOT NULL
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# ---------------------------------------------------------
+# 2. Настройки Intents и Инициализация
 # ---------------------------------------------------------
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
+intents.voice_states = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -45,7 +74,7 @@ ROLE_IDS = {
 }
 
 # ---------------------------------------------------------
-# 2. Настройки yt-dlp и Музыки
+# 3. Настройки yt-dlp и Музыки
 # ---------------------------------------------------------
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
@@ -122,6 +151,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
 @bot.event
 async def on_ready():
     print(f"🤖 Авторизован как: {bot.user.name} (ID: {bot.user.id})")
+    bot.add_view(CreateRoomButtonView())
     try:
         synced = await bot.tree.sync()
         print(f"🌲 Синхронизировано слэш-команд: {len(synced)}")
@@ -129,99 +159,202 @@ async def on_ready():
         print(f"❌ Ошибка синхронизации слэш-команд: {e}")
     print("--------------------------------------------------")
 
+bot.add_listener(on_voice_state_update, 'on_voice_state_update')
+
 # ---------------------------------------------------------
-# Проверка прав на должности
+# 4. МАГАЗИН РОЛЕЙ (UI)
 # ---------------------------------------------------------
-def has_role_or_higher(*role_keys):
-    async def predicate(interaction: discord.Interaction):
-        if interaction.user == interaction.guild.owner:
-            return True
-            
-        user_role_ids = [r.id for r in interaction.user.roles]
-        allowed_ids = [ROLE_IDS[key] for key in role_keys if key in ROLE_IDS]
+class RoleShopView(discord.ui.View):
+    def __init__(self, guild: discord.Guild):
+        super().__init__(timeout=None)
+        self.guild = guild
+        self.update_components()
+
+    def update_components(self):
+        self.clear_items()
+        conn = sqlite3.connect('economy.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT role_id, price FROM shop_roles')
+        items = cursor.fetchall()
+        conn.close()
+
+        if not items:
+            return
+
+        options = []
+        for role_id, price in items:
+            role = self.guild.get_role(role_id)
+            if role:
+                options.append(
+                    discord.SelectOption(
+                        label=role.name,
+                        value=str(role_id),
+                        description=f"Стоимость: {price} баллов",
+                        emoji="🏷️"
+                    )
+                )
+
+        if options:
+            select = discord.Select(placeholder="Выберите роль для покупки...", options=options[:25])
+            select.callback = self.select_callback
+            self.add_item(select)
+
+    async def select_callback(self, interaction: discord.Interaction):
+        role_id = int(interaction.data["values"][0])
+        role = interaction.guild.get_role(role_id)
         
-        if any(r_id in user_role_ids for r_id in allowed_ids):
-            return True
-            
-        raise app_commands.CheckFailure("У вас недостаточно прав для использования этой команды!")
-    return app_commands.check(predicate)
+        if not role:
+            await interaction.response.send_message("❌ Эта роль была удалена на сервере.", ephemeral=True)
+            return
+
+        conn = sqlite3.connect('economy.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT price FROM shop_roles WHERE role_id = ?', (role_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            await interaction.response.send_message("❌ Роль не найдена в магазине.", ephemeral=True)
+            return
+        price = row[0]
+
+        cursor.execute('SELECT points FROM users WHERE user_id = ?', (interaction.user.id,))
+        user_row = cursor.fetchone()
+        user_points = user_row[0] if user_row else 0
+
+        if user_points < price:
+            conn.close()
+            await interaction.response.send_message(f"❌ Недостаточно баллов! У вас **{user_points}**, а нужно **{price}**.", ephemeral=True)
+            return
+
+        cursor.execute('UPDATE users SET points = points - ? WHERE user_id = ?', (price, interaction.user.id))
+        conn.commit()
+        conn.close()
+
+        try:
+            await interaction.user.add_roles(role)
+            await interaction.response.send_message(f"🎉 Вы успешно купили роль **{role.name}** за **{price}** баллов!", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ У бота нет прав на выдачу этой роли (проверьте иерархию ролей!).", ephemeral=True)
 
 # ---------------------------------------------------------
-# Функция для назначения/снятия с должности
+# 5. КОМАНДЫ ЭКОНОМИКИ, НАГРАД И МАГАЗИНА
 # ---------------------------------------------------------
-async def handle_specific_role_slash(interaction: discord.Interaction, member: discord.Member, role_key: str, action: str):
-    role_id = ROLE_IDS.get(role_key)
-    role = interaction.guild.get_role(role_id)
-    
-    if not role:
-        return await interaction.response.send_message(f"❌ Должность для `{role_key}` не найдена на сервере (проверьте ID).", ephemeral=True)
-    
+
+@bot.tree.command(name="reward", description="Получить ежедневную награду (раз в сутки)")
+async def reward_command(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    today = datetime.date.today().isoformat()
+
+    conn = sqlite3.connect('economy.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT last_reward, points FROM users WHERE user_id = ?', (user_id,))
+    row = cursor.fetchone()
+
+    if row:
+        last_reward_date = row[0]
+        if last_reward_date == today:
+            conn.close()
+            await interaction.response.send_message("⏳ Вы уже получали ежедневную награду сегодня! Приходите завтра.", ephemeral=True)
+            return
+        
+        cursor.execute('UPDATE users SET points = points + 100, last_reward = ? WHERE user_id = ?', (today, user_id))
+    else:
+        cursor.execute('INSERT INTO users (user_id, points, last_reward) VALUES (?, 100, ?)', (user_id, today))
+
+    conn.commit()
+    cursor.execute('SELECT points FROM users WHERE user_id = ?', (user_id,))
+    new_balance = cursor.fetchone()[0]
+    conn.close()
+
+    await interaction.response.send_message(f"🎁 Вы успешно получили ежедневную награду — **100 баллов**!\n💎 Ваш текущий баланс: **{new_balance}** баллов.")
+
+@bot.tree.command(name="bal", description="Проверить свой баланс баллов")
+@app_commands.describe(member="Участник (необязательно)")
+async def bal_command(interaction: discord.Interaction, member: discord.Member = None):
+    target = member or interaction.user
+    conn = sqlite3.connect('economy.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT points FROM users WHERE user_id = ?', (target.id,))
+    row = cursor.fetchone()
+    points = row[0] if row else 0
+    conn.close()
+    await interaction.response.send_message(f"💎 У пользователя **{target.display_name}** баланс: **{points} баллов**.")
+
+@bot.tree.command(name="shop", description="Открыть магазин ролей")
+async def shop_command(interaction: discord.Interaction):
+    view = RoleShopView(interaction.guild)
+    if not view.children:
+        await interaction.response.send_message("🛒 Магазин ролей пока пуст! Администратор может добавить роли через текстовую команду `!addshop`.", ephemeral=True)
+    else:
+        await interaction.response.send_message("🛒 **Магазин ролей сервера**\nВыберите нужную роль в меню ниже, чтобы приобрести её за баллы:", view=view, ephemeral=True)
+
+@bot.command(name='addshop')
+@commands.has_permissions(administrator=True)
+async def add_shop_role(ctx, role: discord.Role, price: int):
+    conn = sqlite3.connect('economy.db')
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR REPLACE INTO shop_roles (role_id, price) VALUES (?, ?)', (role.id, price))
+    conn.commit()
+    conn.close()
+    await ctx.send(f'🛒 Роль {role.mention} добавлена в магазин за **{price}** баллов.')
+
+@bot.command(name='addpoints')
+@commands.has_permissions(administrator=True)
+async def add_points(ctx, member: discord.Member, amount: int):
+    conn = sqlite3.connect('economy.db')
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR IGNORE INTO users (user_id, points) VALUES (?, 0)', (member.id,))
+    cursor.execute('UPDATE users SET points = points + ? WHERE user_id = ?', (amount, member.id))
+    conn.commit()
+    cursor.execute('SELECT points FROM users WHERE user_id = ?', (member.id,))
+    new_balance = cursor.fetchone()[0]
+    conn.close()
+    await ctx.send(f'✅ Администратор выдал {amount} баллов пользователю {member.mention}. Новый баланс: **{new_balance}**.')
+
+@bot.command(name='setup_panel')
+@commands.has_permissions(administrator=True)
+async def setup_panel(ctx):
+    embed = discord.Embed(
+        title="✨ Создание приватной комнаты",
+        description="Вы можете **создать** собственную приватную комнату с необходимым названием, а впоследствии **гибко настроить** в соответствии с имеющимся функционалом.",
+        color=discord.Color.dark_embed()
+    )
+    await ctx.send(embed=embed, view=CreateRoomButtonView())
     try:
-        if action == "add":
-            await member.add_roles(role)
-            await interaction.response.send_message(f"🎖 Участник **{member.display_name}** назначен на должность: **{role.name}**!")
-        elif action == "remove":
-            await member.remove_roles(role)
-            await interaction.response.send_message(f"🛡 Участник **{member.display_name}** снят с должности: **{role.name}**.")
+        await ctx.message.delete()
+    except:
+        pass
+
+# ---------------------------------------------------------
+# 6. СЛЭШ-КОМАНДЫ РОЛЕЙ И МОДЕРАЦИИ
+# ---------------------------------------------------------
+
+@bot.tree.command(name="role", description="Создать личную роль с указанием названия и цвета")
+@app_commands.describe(
+    name="Название будущей роли",
+    color="Цвет роли в HEX формате (например: #FF0000 или FF0000)"
+)
+async def role_command(interaction: discord.Interaction, name: str, color: str):
+    clean_color = color.strip("#")
+    try:
+        role_color = discord.Color(int(clean_color, 16))
+    except ValueError:
+        await interaction.response.send_message("❌ Неверный формат цвета! Используйте HEX формат, например: `#FF0000`.", ephemeral=True)
+        return
+
+    try:
+        guild = interaction.guild
+        new_role = await guild.create_role(
+            name=name, 
+            color=role_color, 
+            reason=f"Личная роль создана пользователем {interaction.user}"
+        )
+        await interaction.user.add_roles(new_role)
+        await interaction.response.send_message(f"✅ Вы успешно создали и получили личную роль {new_role.mention}!", ephemeral=True)
     except discord.Forbidden:
-        await interaction.response.send_message("❌ У бота недостаточно прав (передвиньте роль бота выше в списке ролей сервера).", ephemeral=True)
-
-# ---------------------------------------------------------
-# СЛЭШ-КОМАНДЫ НАЗНАЧЕНИЯ И СНЯТИЯ С ДОЛЖНОСТЕЙ
-# ---------------------------------------------------------
-
-@bot.tree.command(name="gmod", description="Назначить Главного модератора")
-@app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin", "gmod")
-async def cmd_gmod(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "gmod", "add")
-
-@bot.tree.command(name="ungmod", description="Снять Главного модератора")
-@app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin", "gmod")
-async def cmd_ungmod(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "gmod", "remove")
-
-@bot.tree.command(name="gadmin", description="Назначить Главного администратора")
-@app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin")
-async def cmd_gadmin(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "gadmin", "add")
-
-@bot.tree.command(name="ungadmin", description="Снять Главного администратора")
-@app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin")
-async def cmd_ungadmin(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "gadmin", "remove")
-
-@bot.tree.command(name="admin", description="Назначить Администратора")
-@app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin")
-async def cmd_admin(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "admin", "add")
-
-@bot.tree.command(name="unadmin", description="Снять Администратора")
-@app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin")
-async def cmd_unadmin(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "admin", "remove")
-
-@bot.tree.command(name="mod", description="Назначить Модератора")
-@app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin", "gmod", "admin")
-async def cmd_mod(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "mod", "add")
-
-@bot.tree.command(name="unmod", description="Снять Модератора")
-@app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin", "gmod", "admin")
-async def cmd_unmod(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "mod", "remove")
-
-
-# ---------------------------------------------------------
-# СЛЭШ-КОМАНДЫ МОДЕРАЦИИ И МУЗЫКИ
-# ---------------------------------------------------------
+        await interaction.response.send_message("❌ У бота нет прав на создание или выдачу ролей! Проверьте иерархию ролей бота.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Произошла ошибка: {e}", ephemeral=True)
 
 @bot.tree.command(name="clear", description="Очистить сообщения в чате")
 @app_commands.describe(amount="Количество сообщений для удаления")
@@ -297,23 +430,20 @@ async def stop(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Бот не подключен к голосовому каналу.", ephemeral=True)
 
 # ---------------------------------------------------------
-# ОБРАБОТЧИК ОШИБОК ДЛЯ СЛЭШ-КОМАНД
+# ОБРАБОТЧИК ОШИБОК СЛЭШ-КОМАНД
 # ---------------------------------------------------------
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.MissingPermissions):
+    if isinstance(error, app_commands.MissingPermissions) or isinstance(error, app_commands.CheckFailure):
         if not interaction.response.is_done():
             await interaction.response.send_message("❌ У вас недостаточно прав для выполнения этой команды!", ephemeral=True)
-    elif isinstance(error, app_commands.CheckFailure):
-        if not interaction.response.is_done():
-            await interaction.response.send_message("❌ У вас нет прав для выполнения этой команды!", ephemeral=True)
     else:
         print(f"Ошибка в слэш-команде: {error}")
         if not interaction.response.is_done():
             await interaction.response.send_message("❌ Произошла ошибка при выполнении команды.", ephemeral=True)
 
 # ---------------------------------------------------------
-# ЗАПУСК БОТА И ВЕБ-СЕРВЕРА
+# 7. ЗАПУСК БОТА И ВЕБ-СЕРВЕРА
 # ---------------------------------------------------------
 if __name__ == "__main__":
     keep_alive()
@@ -322,4 +452,4 @@ if __name__ == "__main__":
         bot.run(token)
     else:
         print("❌ ОШИБКА: Переменная DISCORD_TOKEN не найдена в окружении!")
-    
+            
