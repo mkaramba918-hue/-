@@ -344,22 +344,21 @@ async def add_points(ctx, member: discord.Member, amount: int):
     new_balance = cursor.fetchone()[0]
     conn.close()
     await ctx.send(f'✅ Администратор выдал {amount} баллов пользователю {member.mention}. Новый баланс: **{new_balance}**.')
-
-@bot.command(name='setup_panel')
+@bot.command(name="setup_settings")
 @commands.has_permissions(administrator=True)
-async def setup_panel(ctx):
-    embed = discord.Embed()
-@bot.tree.command(name="setup_settings_panel", description="Создать панель управления приватными комнатами")
-@app_commands.checks.has_permissions(administrator=True)
-async def setup_panel_slash(interaction: discord.Interaction):
+async def setup_settings(ctx):
     embed = discord.Embed(
-        title="✨ Создание приватной комнаты",
-        description="Вы можете **создать** собственную приватную комнату с необходимым названием, а впоследствии **гибко настроить** в соответствии с имеющимся функционалом.",
-        color=discord.Color.dark_embed()
+        title="Настройка приватной комнаты",
+        description="Вы можете **настроить** созданную **приватную комнату** в соответствии с доступным функционалом. Чтобы это сделать воспользуйтесь меню под сообщением.",
+        color=discord.Color.from_rgb(40, 40, 40)
     )
-    await interaction.channel.send(embed=embed, view=CreateRoomButtonView())
-    await interaction.response.send_message("✅ Панель успешно создана!", ephemeral=True)
-    
+    # Отправляем сообщение вместе с вашим выпадающим списком (RoomSettingsView)
+    await ctx.send(embed=embed, view=RoomSettingsView())
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+        
     
     await ctx.send(embed=embed, view=CreateRoomButtonView())
     try:
