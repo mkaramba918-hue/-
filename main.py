@@ -360,7 +360,7 @@ async def setup_panel_slash(interaction: discord.Interaction):
     await interaction.channel.send(embed=embed, view=CreateRoomButtonView())
     await interaction.response.send_message("✅ Панель успешно создана!", ephemeral=True)
     
-    )
+    
     await ctx.send(embed=embed, view=CreateRoomButtonView())
     try:
         await ctx.message.delete()
