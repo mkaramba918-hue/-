@@ -162,6 +162,40 @@ async def on_ready():
 bot.add_listener(on_voice_state_update, 'on_voice_state_update')
 
 # ---------------------------------------------------------
+# Проверка прав на должности
+# ---------------------------------------------------------
+def has_role_or_higher(*role_keys):
+    async def predicate(interaction: discord.Interaction):
+        if interaction.user == interaction.guild.owner:
+            return True
+            
+        user_role_ids = [r.id for r in interaction.user.roles]
+        allowed_ids = [ROLE_IDS[key] for key in role_keys if key in ROLE_IDS]
+        
+        if any(r_id in user_role_ids for r_id in allowed_ids):
+            return True
+            
+        raise app_commands.CheckFailure("У вас недостаточно прав для использования этой команды!")
+    return app_commands.check(predicate)
+
+async def handle_specific_role_slash(interaction: discord.Interaction, member: discord.Member, role_key: str, action: str):
+    role_id = ROLE_IDS.get(role_key)
+    role = interaction.guild.get_role(role_id)
+    
+    if not role:
+        return await interaction.response.send_message(f"❌ Должность для `{role_key}` не найдена на сервере (проверьте ID).", ephemeral=True)
+    
+    try:
+        if action == "add":
+            await member.add_roles(role)
+            await interaction.response.send_message(f"🎖 Участник **{member.display_name}** назначен на должность: **{role.name}**!")
+        elif action == "remove":
+            await member.remove_roles(role)
+            await interaction.response.send_message(f"🛡 Участник **{member.display_name}** снят с должности: **{role.name}**.")
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ У бота недостаточно прав (передвиньте роль бота выше в списке ролей сервера).", ephemeral=True)
+
+# ---------------------------------------------------------
 # 4. МАГАЗИН РОЛЕЙ (UI)
 # ---------------------------------------------------------
 class RoleShopView(discord.ui.View):
@@ -326,8 +360,56 @@ async def setup_panel(ctx):
         pass
 
 # ---------------------------------------------------------
-# 6. СЛЭШ-КОМАНДЫ РОЛЕЙ И МОДЕРАЦИИ
+# 6. СЛЭШ-КОМАНДЫ ДОЛЖНОСТЕЙ И МОДЕРАЦИИ
 # ---------------------------------------------------------
+
+@bot.tree.command(name="gmod", description="Назначить Главного модератора")
+@app_commands.describe(member="Участник")
+@has_role_or_higher("gadmin", "gmod")
+async def cmd_gmod(interaction: discord.Interaction, member: discord.Member):
+    await handle_specific_role_slash(interaction, member, "gmod", "add")
+
+@bot.tree.command(name="ungmod", description="Снять Главного модератора")
+@app_commands.describe(member="Участник")
+@has_role_or_higher("gadmin", "gmod")
+async def cmd_ungmod(interaction: discord.Interaction, member: discord.Member):
+    await handle_specific_role_slash(interaction, member, "gmod", "remove")
+
+@bot.tree.command(name="gadmin", description="Назначить Главного администратора")
+@app_commands.describe(member="Участник")
+@has_role_or_higher("gadmin")
+async def cmd_gadmin(interaction: discord.Interaction, member: discord.Member):
+    await handle_specific_role_slash(interaction, member, "gadmin", "add")
+
+@bot.tree.command(name="ungadmin", description="Снять Главного администратора")
+@app_commands.describe(member="Участник")
+@has_role_or_higher("gadmin")
+async def cmd_ungadmin(interaction: discord.Interaction, member: discord.Member):
+    await handle_specific_role_slash(interaction, member, "gadmin", "remove")
+
+@bot.tree.command(name="admin", description="Назначить Администратора")
+@app_commands.describe(member="Участник")
+@has_role_or_higher("gadmin")
+async def cmd_admin(interaction: discord.Interaction, member: discord.Member):
+    await handle_specific_role_slash(interaction, member, "admin", "add")
+
+@bot.tree.command(name="unadmin", description="Снять Администратора")
+@app_commands.describe(member="Участник")
+@has_role_or_higher("gadmin")
+async def cmd_unadmin(interaction: discord.Interaction, member: discord.Member):
+    await handle_specific_role_slash(interaction, member, "admin", "remove")
+
+@bot.tree.command(name="mod", description="Назначить Модератора")
+@app_commands.describe(member="Участник")
+@has_role_or_higher("gadmin", "gmod", "admin")
+async def cmd_mod(interaction: discord.Interaction, member: discord.Member):
+    await handle_specific_role_slash(interaction, member, "mod", "add")
+
+@bot.tree.command(name="unmod", description="Снять Модератора")
+@app_commands.describe(member="Участник")
+@has_role_or_higher("gadmin", "gmod", "admin")
+async def cmd_unmod(interaction: discord.Interaction, member: discord.Member):
+    await handle_specific_role_slash(interaction, member, "mod", "remove")
 
 @bot.tree.command(name="role", description="Создать личную роль с указанием названия и цвета")
 @app_commands.describe(
@@ -392,64 +474,4 @@ async def ban(interaction: discord.Interaction, member: discord.Member, days: in
 
 @bot.tree.command(name="mute", description="Выдать мут (тайм-аут) участнику")
 @app_commands.describe(member="Участник", duration_minutes="Длительность в минутах", reason="Причина мута")
-@app_commands.checks.has_permissions(moderate_members=True)
-async def mute(interaction: discord.Interaction, member: discord.Member, duration_minutes: int = 10, reason: str = "Причина не указана"):
-    duration = discord.utils.utcnow() + datetime.timedelta(minutes=duration_minutes)
-    await member.timeout(duration, reason=reason)
-    await interaction.response.send_message(f"🔇 **{member.name}** в муте на {duration_minutes} мин. Причина: {reason}")
-
-@bot.tree.command(name="play", description="Включить музыку из YouTube")
-@app_commands.describe(url="Ссылка или название трека")
-async def play(interaction: discord.Interaction, url: str):
-    if not interaction.user.voice:
-        return await interaction.response.send_message("❌ Вы должны находиться в голосовом канале!", ephemeral=True)
-    
-    channel = interaction.user.voice.channel
-    voice_client = interaction.guild.voice_client
-
-    await interaction.response.defer()
-
-    if voice_client is None:
-        await channel.connect()
-    elif voice_client.channel != channel:
-        await voice_client.move_to(channel)
-
-    try:
-        player = await YTDLSource.from_url(url, loop=bot.loop, stream=True)
-        interaction.guild.voice_client.play(player, after=lambda e: print(f'Ошибка плеера: {e}') if e else None)
-        await interaction.followup.send(f"🎶 Сейчас играет: **{player.title}**")
-    except Exception as e:
-        await interaction.followup.send(f"❌ Ошибка воспроизведения: `{str(e)}`")
-
-@bot.tree.command(name="stop", description="Остановить музыку и отключить бота")
-async def stop(interaction: discord.Interaction):
-    if interaction.guild.voice_client:
-        await interaction.guild.voice_client.disconnect()
-        await interaction.response.send_message("⏹ Воспроизведение остановлено, бот отключен.")
-    else:
-        await interaction.response.send_message("❌ Бот не подключен к голосовому каналу.", ephemeral=True)
-
-# ---------------------------------------------------------
-# ОБРАБОТЧИК ОШИБОК СЛЭШ-КОМАНД
-# ---------------------------------------------------------
-@bot.tree.error
-async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.MissingPermissions) or isinstance(error, app_commands.CheckFailure):
-        if not interaction.response.is_done():
-            await interaction.response.send_message("❌ У вас недостаточно прав для выполнения этой команды!", ephemeral=True)
-    else:
-        print(f"Ошибка в слэш-команде: {error}")
-        if not interaction.response.is_done():
-            await interaction.response.send_message("❌ Произошла ошибка при выполнении команды.", ephemeral=True)
-
-# ---------------------------------------------------------
-# 7. ЗАПУСК БОТА И ВЕБ-СЕРВЕРА
-# ---------------------------------------------------------
-if __name__ == "__main__":
-    keep_alive()
-    token = os.getenv("DISCORD_TOKEN")
-    if token:
-        bot.run(token)
-    else:
-        print("❌ ОШИБКА: Переменная DISCORD_TOKEN не найдена в окружении!")
-            
+@app_commands.checks.has_perm
