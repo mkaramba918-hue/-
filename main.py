@@ -523,6 +523,12 @@ class RoomSettingsSelect(discord.ui.Select):
         ]
         super().__init__(placeholder="Настроить приватную комнату", min_values=1, max_values=1, options=options, custom_id="room_settings_select")
 
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            f"Вы выбрали настройку: `{self.values[0]}`. Функционал в разработке!", 
+            ephemeral=True
+        )
+
 class RoomSettingsView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
