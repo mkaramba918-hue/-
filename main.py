@@ -344,14 +344,6 @@ async def add_points(ctx, member: discord.Member, amount: int):
     new_balance = cursor.fetchone()[0]
     conn.close()
     await ctx.send(f'✅ Администратор выдал {amount} баллов пользователю {member.mention}. Новый баланс: **{new_balance}**.')
-@bot.command(name="setup_settings")
-@commands.has_permissions(administrator=True)
-async def setup_settings(ctx):
-    embed = discord.Embed(
-        title="Настройка приватной комнаты",
-        description="Вы можете **настроить** созданную **приватную комнату** в соответствии с доступным функционалом. Чтобы это сделать воспользуйтесь меню под сообщением.",
-        color=discord.Color.from_rgb(40, 40, 40)
-    )
     # Отправляем сообщение вместе с вашим выпадающим списком (RoomSettingsView)
     await ctx.send(embed=embed, view=RoomSettingsView())
     try:
