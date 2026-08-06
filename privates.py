@@ -1,3 +1,5 @@
+import discord  # <--- Вот этого импорта не хватает в privates.py
+
 # Хранилище активных приваток: {voice_channel_id: owner_id}
 active_private_channels = {}
 
