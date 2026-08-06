@@ -506,7 +506,6 @@ async def mute(interaction: discord.Interaction, member: discord.Member, duratio
 # ---------------------------------------------------------
 # ЗАПУСК БОТА И WEB-СЕРВЕРА
 # ---------------------------------------------------------
-
 import os
 import discord
 from discord.ext import commands
@@ -521,21 +520,25 @@ class CreateRoomModal(discord.ui.Modal, title="Создание приватно
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Мгновенный отложенный ответ, чтобы избежать тайм-аута
+        # Мгновенный отложенный ответ, чтобы избежать тайм-аута 3 секунд
         await interaction.response.defer(ephemeral=True)
         
         guild = interaction.guild
         author = interaction.user
+        category = interaction.channel.category  # Берем категорию того же раздела, где нажата кнопка
         
-        # Права: создатель получает полный доступ
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(connect=True),
             author: discord.PermissionOverwrite(connect=True, manage_channels=True, mute_members=True, deafen_members=True, move_members=True)
         }
         
         try:
-            # Создаем голосовой канал
-            channel = await guild.create_voice_channel(name=self.room_name.value, overwrites=overwrites)
+            # Создаем голосовой канал строго в той же категории (разделе)
+            channel = await guild.create_voice_channel(
+                name=self.room_name.value, 
+                overwrites=overwrites, 
+                category=category
+            )
             
             # Перемещаем пользователя в созданную комнату, если он в голосе
             if author.voice:
@@ -577,8 +580,17 @@ class RenameModal(discord.ui.Modal, title="Изменить название к�
         max_length=50,
     )
 
+    def __init__(self, voice_channel: discord.VoiceChannel):
+        super().__init__()
+        self.voice_channel = voice_channel
+
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message(f"Название изменено на: **{self.new_name.value}**", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await self.voice_channel.edit(name=self.new_name.value)
+            await interaction.followup.send(f"✅ Название комнаты изменено на: **{self.new_name.value}**", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Не удалось изменить название: {e}", ephemeral=True)
 
 class LimitModal(discord.ui.Modal, title="Установить лимит мест"):
     new_limit = discord.ui.TextInput(
@@ -587,8 +599,23 @@ class LimitModal(discord.ui.Modal, title="Установить лимит мес
         max_length=2,
     )
 
+    def __init__(self, voice_channel: discord.VoiceChannel):
+        super().__init__()
+        self.voice_channel = voice_channel
+
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message(f"Лимит установлен: **{self.new_limit.value}**", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        try:
+            limit = int(self.new_limit.value)
+            if 0 <= limit <= 99:
+                await self.voice_channel.edit(user_limit=limit)
+                await interaction.followup.send(f"✅ Лимит пользователей установлен: **{limit}**", ephemeral=True)
+            else:
+                await interaction.followup.send("❌ Лимит должен быть от 0 до 99.", ephemeral=True)
+        except ValueError:
+            await interaction.followup.send("❌ Введите корректное число!", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Не удалось изменить лимит: {e}", ephemeral=True)
 
 class RoomSettingsSelect(discord.ui.Select):
     def __init__(self):
@@ -609,17 +636,39 @@ class RoomSettingsSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         choice = self.values[0]
+        user = interaction.user
+        
+        voice_channel = user.voice.channel if user.voice else None
+
+        if not voice_channel:
+            await interaction.response.send_message("❌ Вы должны находиться в голосовом канале, чтобы управлять им!", ephemeral=True)
+            return
         
         if choice == "rename":
-            await interaction.response.send_modal(RenameModal())
+            await interaction.response.send_modal(RenameModal(voice_channel))
         elif choice == "limit":
-            await interaction.response.send_modal(LimitModal())
+            await interaction.response.send_modal(LimitModal(voice_channel))
         elif choice == "lock":
-            await interaction.response.send_message("🔒 Комната закрыта для всех.", ephemeral=True)
+            await interaction.response.defer(ephemeral=True)
+            try:
+                await voice_channel.set_permissions(interaction.guild.default_role, connect=False)
+                await interaction.followup.send("🔒 Комната закрыта для всех.", ephemeral=True)
+            except Exception as e:
+                await interaction.followup.send(f"❌ Ошибка: {e}", ephemeral=True)
         elif choice == "unlock":
-            await interaction.response.send_message("🔓 Комната открыта.", ephemeral=True)
+            await interaction.response.defer(ephemeral=True)
+            try:
+                await voice_channel.set_permissions(interaction.guild.default_role, connect=True)
+                await interaction.followup.send("🔓 Комната открыта для всех.", ephemeral=True)
+            except Exception as e:
+                await interaction.followup.send(f"❌ Ошибка: {e}", ephemeral=True)
         elif choice == "delete":
-            await interaction.response.send_message("❌ Приватная комната удалена.", ephemeral=True)
+            await interaction.response.defer(ephemeral=True)
+            try:
+                await voice_channel.delete()
+                await interaction.followup.send("❌ Приватная комната успешно удалена.", ephemeral=True)
+            except Exception as e:
+                await interaction.followup.send(f"❌ Не удалось удалить комнату: {e}", ephemeral=True)
         else:
             await interaction.response.send_message(
                 f"Вы выбрали настройку: `{choice}`. Функционал в разработке!", 
@@ -651,7 +700,6 @@ async def setup_settings(ctx):
 @bot.command(name="add_money")
 @commands.has_permissions(administrator=True)
 async def add_money(ctx, member: discord.Member, amount: int):
-    # Здесь вы можете подключить сохранение баланса в базу данных
     await ctx.send(f"Успешно выдано **{amount}** монет пользователю {member.mention}!")
 
 
