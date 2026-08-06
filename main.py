@@ -1,5 +1,6 @@
 import os
 import asyncio
+import datetime
 import discord
 from discord.ext import commands
 import yt_dlp
@@ -14,7 +15,7 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ---------------------------------------------------------
-# 2. Опции yt-dlp с обходом гео-блокировок (SoundCloud / YouTube)
+# 2. Опции yt-dlp с полной защитой от блокировок и DRM
 # ---------------------------------------------------------
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
@@ -30,8 +31,16 @@ YTDL_OPTIONS = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',  # Принудительно использовать IPv4
+
+    # ⚡️ ОБХОД КАПЧИ И АВТОРИЗАЦИИ YOUTUBE ("Sign in to confirm you're not a bot")
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['tv', 'android'],
+            'skip': ['hls', 'dash']
+        }
+    },
     
-    # ⚡️ Обход геоблоков и защит облачных IP
+    # ⚡️ Обход геоблоков и подмена браузера
     'geo_bypass': True,
     'http_headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -57,14 +66,31 @@ class YTDLSource(discord.PCMVolumeTransformer):
     async def from_url(cls, url, *, loop=None, stream=True):
         loop = loop or asyncio.get_event_loop()
         
-        # Если передан обычный текст вместо ссылки — ищем на YouTube
+        # Перехват текста, Spotify, Apple Music и поиск через YouTube
         if not url.startswith("http://") and not url.startswith("https://"):
-            url = f"ytsearch:{url}"
-            
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+            search_query = f"ytsearch:{url}"
+        elif "spotify.com" in url or "apple.com" in url:
+            search_query = f"ytsearch:{url}"
+        else:
+            search_query = url
+
+        try:
+            data = await loop.run_in_executor(
+                None, 
+                lambda: ytdl.extract_info(search_query, download=not stream)
+            )
+        except Exception as e:
+            # Если прямой доступ заблокирован (DRM/Гео), просим YouTube найти трек по названию
+            err_msg = str(e).lower()
+            if "drm" in err_msg or "geo restriction" in err_msg or "confirm" in err_msg:
+                data = await loop.run_in_executor(
+                    None, 
+                    lambda: ytdl.extract_info(f"ytsearch:{url}", download=not stream)
+                )
+            else:
+                raise e
 
         if 'entries' in data:
-            # Берем первый результат из поиска
             data = data['entries'][0]
 
         filename = data['url'] if stream else ytdl.prepare_filename(data)
@@ -99,7 +125,7 @@ async def ban(ctx, member: discord.Member, *, reason: str = "Причина не
     await member.ban(reason=reason)
     await ctx.send(f"⛔️ Участник **{member.name}** был забанен. Причина: {reason}")
 
-@bot.command(name="mute", help="Выдает таймаут (мут) участнику")
+@bot.command(name="mute", help="Выдает таймаут (мут) участнику в минутах")
 @commands.has_permissions(moderate_members=True)
 async def mute(ctx, member: discord.Member, duration_minutes: int = 10, *, reason: str = "Причина не указана"):
     duration = discord.utils.utcnow() + datetime.timedelta(minutes=duration_minutes)
