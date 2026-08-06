@@ -510,6 +510,9 @@ import os
 import discord
 from discord.ext import commands
 
+# Словарь для хранения баланса пользователей: {user_id: amount}
+user_balances = {}
+
 # --- Модуль создания приватной комнаты ---
 
 class CreateRoomModal(discord.ui.Modal, title="Создание приватной комнаты"):
@@ -520,12 +523,11 @@ class CreateRoomModal(discord.ui.Modal, title="Создание приватно
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Мгновенный отложенный ответ, чтобы избежать тайм-аута 3 секунд
         await interaction.response.defer(ephemeral=True)
         
         guild = interaction.guild
         author = interaction.user
-        category = interaction.channel.category  # Берем категорию того же раздела, где нажата кнопка
+        category = interaction.channel.category  # Создаем в том же разделе
         
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(connect=True),
@@ -533,14 +535,12 @@ class CreateRoomModal(discord.ui.Modal, title="Создание приватно
         }
         
         try:
-            # Создаем голосовой канал строго в той же категории (разделе)
             channel = await guild.create_voice_channel(
                 name=self.room_name.value, 
                 overwrites=overwrites, 
                 category=category
             )
             
-            # Перемещаем пользователя в созданную комнату, если он в голосе
             if author.voice:
                 await author.move_to(channel)
                 
@@ -695,12 +695,16 @@ async def setup_settings(ctx):
         pass
 
 
-# --- Команда для выдачи монет ---
+# --- Команда для выдачи монет (с сохранением баланса) ---
 
 @bot.command(name="add_money")
 @commands.has_permissions(administrator=True)
 async def add_money(ctx, member: discord.Member, amount: int):
-    await ctx.send(f"Успешно выдано **{amount}** монет пользователю {member.mention}!")
+    # Добавляем монеты в словарь по ID пользователя
+    current_balance = user_balances.get(member.id, 0)
+    user_balances[member.id] = current_balance + amount
+    
+    await ctx.send(f"Успешно выдано **{amount}** монет пользователю {member.mention}! (Баланс: {user_balances[member.id]})")
 
 
 # --- Запуск бота ---
