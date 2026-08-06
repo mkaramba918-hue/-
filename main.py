@@ -506,6 +506,70 @@ async def mute(interaction: discord.Interaction, member: discord.Member, duratio
 # ---------------------------------------------------------
 # ЗАПУСК БОТА И WEB-СЕРВЕРА
 # ---------------------------------------------------------
+
+import os
+import discord
+from discord.ext import commands
+
+# --- Модуль создания приватной комнаты ---
+
+class CreateRoomModal(discord.ui.Modal, title="Создание приватной комнаты"):
+    room_name = discord.ui.TextInput(
+        label="Название комнаты",
+        placeholder="Введите название вашей комнаты...",
+        max_length=50,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Мгновенный отложенный ответ, чтобы избежать тайм-аута
+        await interaction.response.defer(ephemeral=True)
+        
+        guild = interaction.guild
+        author = interaction.user
+        
+        # Права: создатель получает полный доступ
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(connect=True),
+            author: discord.PermissionOverwrite(connect=True, manage_channels=True, mute_members=True, deafen_members=True, move_members=True)
+        }
+        
+        try:
+            # Создаем голосовой канал
+            channel = await guild.create_voice_channel(name=self.room_name.value, overwrites=overwrites)
+            
+            # Перемещаем пользователя в созданную комнату, если он в голосе
+            if author.voice:
+                await author.move_to(channel)
+                
+            await interaction.followup.send(f"✅ Ваша приватная комната **{self.room_name.value}** успешно создана!", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Ошибка при создании комнаты: {e}", ephemeral=True)
+
+class CreateRoomView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Создать приватную комнату", style=discord.ButtonStyle.green, custom_id="create_room_btn", emoji="➕")
+    async def create_room_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CreateRoomModal())
+
+@bot.command(name="setup_create")
+@commands.has_permissions(administrator=True)
+async def setup_create(ctx):
+    embed = discord.Embed(
+        title="Создание приватной комнаты",
+        description="Вы можете **создать** собственную **приватную комнату** с необходимым названием, а впоследствии **гибко настроить** в соответствии с имеющимся функционалом.",
+        color=discord.Color.from_rgb(217, 78, 47)
+    )
+    await ctx.send(embed=embed, view=CreateRoomView())
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+
+
+# --- Модуль настройки приватной комнаты ---
+
 class RenameModal(discord.ui.Modal, title="Изменить название комнаты"):
     new_name = discord.ui.TextInput(
         label="Новое название",
@@ -580,6 +644,18 @@ async def setup_settings(ctx):
         await ctx.message.delete()
     except:
         pass
+
+
+# --- Команда для выдачи монет ---
+
+@bot.command(name="add_money")
+@commands.has_permissions(administrator=True)
+async def add_money(ctx, member: discord.Member, amount: int):
+    # Здесь вы можете подключить сохранение баланса в базу данных
+    await ctx.send(f"Успешно выдано **{amount}** монет пользователю {member.mention}!")
+
+
+# --- Запуск бота ---
 
 if __name__ == "__main__":
     keep_alive()
