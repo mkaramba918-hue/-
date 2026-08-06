@@ -19,7 +19,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # ---------------------------------------------------------
 ROLE_IDS = {
     "gmod": 1512588171756699830,    # Главный модератор
-    "gadmin": 1512588171756699830,  # Главный администратор (у вас указан тот же ID, при необходимости измените)
+    "gadmin": 1512588171756699830,  # Главный администратор
     "admin": 1484124657563996170,   # Администратор
     "mod": 1530640511420076143      # Модератор
 }
@@ -105,11 +105,10 @@ async def on_ready():
     print("--------------------------------------------------")
 
 # ---------------------------------------------------------
-# Проверка: есть ли у пользователя нужная должность для вызова команды
+# Проверка прав на должности
 # ---------------------------------------------------------
 def has_role_or_higher(*role_keys):
     async def predicate(ctx):
-        # Разрешаем создателю сервера (админу) обходить проверку
         if ctx.author == ctx.guild.owner:
             return True
             
@@ -122,15 +121,14 @@ def has_role_or_higher(*role_keys):
         raise commands.MissingRole("У вас недостаточно прав для использования этой команды!")
     return commands.check(predicate)
 
-# Обработчик ошибок для проверки прав
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.MissingRole) or isinstance(error, commands.CheckFailure):
         await ctx.send("❌ У вас нет прав для выполнения этой команды!", delete_after=5)
     elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send("❌ Вы указали не все аргументы! Пример: `!gmod @Пользователь`", delete_after=5)
+        await ctx.send("❌ Вы указали не все аргументы!", delete_after=5)
     elif isinstance(error, commands.BadArgument):
-        await ctx.send("❌ Ошибка в аргументах (убедитесь, что правильно упомянули пользователя).", delete_after=5)
+        await ctx.send("❌ Ошибка в аргументах (проверьте правильность написания чисел или упоминания пользователя).", delete_after=5)
     else:
         print(f"Ошибка в команде: {error}")
 
@@ -158,7 +156,6 @@ async def handle_specific_role(ctx, member: discord.Member, role_key: str, actio
 # КОМАНДЫ НАЗНАЧЕНИЯ И СНЯТИЯ С ДОЛЖНОСТЕЙ
 # ---------------------------------------------------------
 
-# Главный модератор (могут использовать только Главный администратор / Гл. модератор или владелец)
 @bot.command(name="gmod")
 @has_role_or_higher("gadmin", "gmod")
 async def cmd_gmod(ctx, member: discord.Member):
@@ -169,8 +166,6 @@ async def cmd_gmod(ctx, member: discord.Member):
 async def cmd_ungmod(ctx, member: discord.Member):
     await handle_specific_role(ctx, member, "gmod", "remove")
 
-
-# Главный администратор
 @bot.command(name="gadmin")
 @has_role_or_higher("gadmin")
 async def cmd_gadmin(ctx, member: discord.Member):
@@ -181,8 +176,6 @@ async def cmd_gadmin(ctx, member: discord.Member):
 async def cmd_ungadmin(ctx, member: discord.Member):
     await handle_specific_role(ctx, member, "gadmin", "remove")
 
-
-# Администратор
 @bot.command(name="admin")
 @has_role_or_higher("gadmin")
 async def cmd_admin(ctx, member: discord.Member):
@@ -193,8 +186,6 @@ async def cmd_admin(ctx, member: discord.Member):
 async def cmd_unadmin(ctx, member: discord.Member):
     await handle_specific_role(ctx, member, "admin", "remove")
 
-
-# Модератор
 @bot.command(name="mod")
 @has_role_or_higher("gadmin", "gmod", "admin")
 async def cmd_mod(ctx, member: discord.Member):
@@ -218,14 +209,34 @@ async def clear(ctx, amount: int = 5):
 @bot.command(name="kick")
 @commands.has_permissions(kick_members=True)
 async def kick(ctx, member: discord.Member, *, reason: str = "Причина не указана"):
+    try:
+        await member.send(f"⚠️ Вы были изгнаны с сервера **{ctx.guild.name}**. Причина: {reason}")
+    except:
+        pass
     await member.kick(reason=reason)
     await ctx.send(f"🚪 Участник **{member.name}** кикнут. Причина: {reason}")
 
+# Команда бана с уведомлением в ЛС и поддержкой количества дней
 @bot.command(name="ban")
 @commands.has_permissions(ban_members=True)
-async def ban(ctx, member: discord.Member, *, reason: str = "Причина не указана"):
-    await member.ban(reason=reason)
-    await ctx.send(f"⛔️ Участник **{member.name}** забанен. Причина: {reason}")
+async def ban(ctx, member: discord.Member, days: int = 0, *, reason: str = "Причина не указана"):
+    # Пытаемся отправить сообщение в ЛС забаненному пользователю
+    try:
+        if days > 0:
+            await member.send(f"⛔️ Вы были забанены на сервере **{ctx.guild.name}** на **{days} дн.** Причина: {reason}")
+        else:
+            await member.send(f"⛔️ Вы были забанены на сервере **{ctx.guild.name}** навсегда. Причина: {reason}")
+    except discord.Forbidden:
+        # Если у пользователя закрыты ЛС, бот просто пропустит этот шаг и не выдаст ошибку
+        pass
+
+    del_days = min(days, 7) if days > 0 else 0
+    await member.ban(reason=reason, delete_message_days=del_days)
+    
+    if days > 0:
+        await ctx.send(f"⛔️ Участник **{member.name}** забанен на **{days} дн.** Причина: {reason}")
+    else:
+        await ctx.send(f"⛔️ Участник **{member.name}** забанен навсегда. Причина: {reason}")
 
 @bot.command(name="mute")
 @commands.has_permissions(moderate_members=True)
@@ -264,4 +275,4 @@ if token:
     bot.run(token)
 else:
     print("❌ ОШИБКА: Переменная DISCORD_TOKEN не найдена в окружении!")
-            
+    
