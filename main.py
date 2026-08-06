@@ -514,10 +514,7 @@ async def mute(interaction: discord.Interaction, member: discord.Member, duratio
 # ---------------------------------------------------------
 # ЗАПУСК БОТА И WEB-СЕРВЕРА
 # ---------------------------------------------------------
-if __name__ == "__main__":
-    keep_alive()
-    TOKEN = os.environ.get("DISCORD_TOKEN")
-    class RoomSettingsSelect(discord.ui.Select):
+class RoomSettingsSelect(discord.ui.Select):
     def __init__(self):
         options = [
             discord.SelectOption(label="Изменить название", description="Изменить название вашей комнаты", emoji="✏️", value="rename"),
@@ -552,9 +549,12 @@ async def setup_settings(ctx):
         await ctx.message.delete()
     except:
         pass
-        
-        if not TOKEN:
-    print("❌ Ошибка: Не найден токен бота в переменных окружения (DISCORD_TOKEN).")
-else:
-    bot.run(TOKEN)
+
+if __name__ == "__main__":
+    keep_alive()
+    TOKEN = os.environ.get("DISCORD_TOKEN")
+    if not TOKEN:
+        print("❌ Ошибка: Не найден токен бота в переменных окружения (DISCORD_TOKEN).")
+    else:
+        bot.run(TOKEN)
         
