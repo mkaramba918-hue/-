@@ -520,5 +520,40 @@ if __name__ == "__main__":
     if not TOKEN:
         print("❌ Ошибка: Не найден токен бота в переменных окружения (DISCORD_TOKEN).")
     else:
-        bot.run(TOKEN)
+    class RoomSettingsSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="Изменить название", description="Изменить название вашей комнаты", emoji="✏️", value="rename"),
+            discord.SelectOption(label="Установить лимит", description="Ограничить количество мест в комнате", emoji="👥", value="limit"),
+            discord.SelectOption(label="Забрать доступ", description="Запретить пользователю заходить в комнату", emoji="➖", value="revoke"),
+            discord.SelectOption(label="Выдать доступ", description="Разрешить пользователю вход в комнату", emoji="➕", value="grant"),
+            discord.SelectOption(label="Закрыть комнату для всех", description="Сделать комнату закрытой", emoji="🔒", value="lock"),
+            discord.SelectOption(label="Открыть комнату для всех", description="Сделать комнату открытой", emoji="🔓", value="unlock"),
+            discord.SelectOption(label="Отключить микрофон", description="Заглушить пользователя в комнате", emoji="🔇", value="mute"),
+            discord.SelectOption(label="Включить микрофон", description="Включить звук пользователю", emoji="🎙️", value="unmute"),
+            discord.SelectOption(label="Выгнать пользователя", description="Кикнуть участника из комнаты", emoji="🚪", value="kick"),
+            discord.SelectOption(label="Назначить владельца", description="Передать права на комнату другому", emoji="👑", value="transfer"),
+            discord.SelectOption(label="Удалить приватную комнату", description="Полностью удалить канал", emoji="❌", value="delete"),
+        ]
+        super().__init__(placeholder="Настроить приватную комнату", min_values=1, max_values=1, options=options, custom_id="room_settings_select")
+
+class RoomSettingsView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(RoomSettingsSelect())
+
+@bot.command(name="setup_settings")
+@commands.has_permissions(administrator=True)
+async def setup_settings(ctx):
+    embed = discord.Embed(
+        title="Настройка приватной комнаты",
+        description="Вы можете **настроить** созданную **приватную комнату** в соответствии с доступным функционалом. Чтобы это сделать воспользуйтесь меню под сообщением.",
+        color=discord.Color.from_rgb(40, 40, 40)
+    )
+    await ctx.send(embed=embed, view=RoomSettingsView())
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+            bot.run(TOKEN)
         
