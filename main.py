@@ -411,7 +411,7 @@ async def cmd_mod(interaction: discord.Interaction, member: discord.Member):
 async def cmd_unmod(interaction: discord.Interaction, member: discord.Member):
     await handle_specific_role_slash(interaction, member, "mod", "remove")
 
-@bot.tree.command(name="role", description="Создать личную роль с указанием названия и цвета")
+@bot.tree.command(name="role", description="Создать личную роль с указанием названия и цвета (Стоимость: 10000 монет)")
 @app_commands.describe(
     name="Название будущей роли",
     color="Цвет роли в HEX формате (например: #FF0000 или FF0000)"
@@ -424,6 +424,20 @@ async def role_command(interaction: discord.Interaction, name: str, color: str):
         await interaction.response.send_message("❌ Неверный формат цвета! Используйте HEX формат, например: `#FF0000`.", ephemeral=True)
         return
 
+    user_id = interaction.user.id
+    role_price = 10000
+
+    conn = sqlite3.connect('economy.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT points FROM users WHERE user_id = ?', (user_id,))
+    row = cursor.fetchone()
+    user_points = row[0] if row else 0
+
+    if user_points < role_price:
+        conn.close()
+        await interaction.response.send_message(f"❌ У вас недостаточно средств! Создание личной роли стоит **{role_price} монет**, а у вас всего **{user_points} монет**.", ephemeral=True)
+        return
+
     try:
         guild = interaction.guild
         new_role = await guild.create_role(
@@ -431,11 +445,18 @@ async def role_command(interaction: discord.Interaction, name: str, color: str):
             color=role_color, 
             reason=f"Личная роль создана пользователем {interaction.user}"
         )
+        
+        cursor.execute('UPDATE users SET points = points - ? WHERE user_id = ?', (role_price, user_id))
+        conn.commit()
+        conn.close()
+
         await interaction.user.add_roles(new_role)
-        await interaction.response.send_message(f"✅ Вы успешно создали и получили личную роль {new_role.mention}!", ephemeral=True)
+        await interaction.response.send_message(f"✅ Вы успешно создали личную роль {new_role.mention} за **{role_price} монет**!", ephemeral=True)
     except discord.Forbidden:
+        conn.close()
         await interaction.response.send_message("❌ У бота нет прав на создание или выдачу ролей! Проверьте иерархию ролей бота.", ephemeral=True)
     except Exception as e:
+        conn.close()
         await interaction.response.send_message(f"❌ Произошла ошибка: {e}", ephemeral=True)
 
 @bot.tree.command(name="clear", description="Очистить сообщения в чате")
@@ -459,19 +480,4 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
 @bot.tree.command(name="ban", description="Забанить участника на сервере")
 @app_commands.describe(member="Участник", days="Количество дней удаления сообщений (0-7)", reason="Причина бана")
 @app_commands.checks.has_permissions(ban_members=True)
-async def ban(interaction: discord.Interaction, member: discord.Member, days: int = 0, reason: str = "Причина не указана"):
-    try:
-        if days > 0:
-            await member.send(f"⛔️ Вы были забанены на сервере **{interaction.guild.name}**. Причина: {reason}")
-        else:
-            await member.send(f"⛔️ Вы были забанены на сервере **{interaction.guild.name}** навсегда. Причина: {reason}")
-    except discord.Forbidden:
-        pass
-
-    del_days = min(days, 7) if days > 0 else 0
-    await member.ban(reason=reason, delete_message_days=del_days)
-    await interaction.response.send_message(f"⛔️ Участник **{member.name}** забанен. Причина: {reason}")
-
-@bot.tree.command(name="mute", description="Выдать мут (тайм-аут) участнику")
-@app_commands.describe(member="Участник", duration_minutes="Длительность в минутах", reason="Причина мута")
-@app_commands.checks.has_perm
+async def ban(interaction: discord.Interaction, member: discord.Member, days: int = 0, reason: str = "Причина не 
