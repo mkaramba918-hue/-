@@ -480,4 +480,37 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
 @bot.tree.command(name="ban", description="Забанить участника на сервере")
 @app_commands.describe(member="Участник", days="Количество дней удаления сообщений (0-7)", reason="Причина бана")
 @app_commands.checks.has_permissions(ban_members=True)
-async def ban(interaction: discord.Interaction, member: discord.Member, days: int = 0, reason: str = "Причина не 
+async def ban(interaction: discord.Interaction, member: discord.Member, days: int = 0, reason: str = "Причина не указана"):
+    try:
+        if days > 0:
+            await member.send(f"⛔️ Вы были забанены на сервере **{interaction.guild.name}**. Причина: {reason}")
+        else:
+            await member.send(f"⛔️ Вы были забанены на сервере **{interaction.guild.name}** навсегда. Причина: {reason}")
+    except discord.Forbidden:
+        pass
+
+    del_days = min(days, 7) if days > 0 else 0
+    await member.ban(reason=reason, delete_message_days=del_days)
+    await interaction.response.send_message(f"⛔️ Участник **{member.name}** забанен. Причина: {reason}")
+    @bot.tree.command(name="mute", description="Выдать мут (тайм-аут) участнику")
+@app_commands.describe(member="Участник", duration_minutes="Длительность в минутах", reason="Причина мута")
+@app_commands.checks.has_permissions(moderate_members=True)
+async def mute(interaction: discord.Interaction, member: discord.Member, duration_minutes: int, reason: str = "Причина не указана"):
+    try:
+        duration = datetime.timedelta(minutes=duration_minutes)
+        await member.timeout(duration, reason=reason)
+        await interaction.response.send_message(f"🔇 Участник **{member.name}** получил мут на {duration_minutes} мин. Причина: {reason}")
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Не удалось выдать мут: {e}", ephemeral=True)
+
+# ---------------------------------------------------------
+# ЗАПУСК БОТА И WEB-СЕРВЕРА
+# ---------------------------------------------------------
+if __name__ == "__main__":
+    keep_alive()
+    TOKEN = os.environ.get("DISCORD_TOKEN")
+    if not TOKEN:
+        print("❌ Ошибка: Не найден токен бота в переменных окружения (DISCORD_TOKEN).")
+    else:
+        bot.run(TOKEN)
+        
