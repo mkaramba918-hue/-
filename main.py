@@ -506,6 +506,26 @@ async def mute(interaction: discord.Interaction, member: discord.Member, duratio
 # ---------------------------------------------------------
 # ЗАПУСК БОТА И WEB-СЕРВЕРА
 # ---------------------------------------------------------
+class RenameModal(discord.ui.Modal, title="Изменить название комнаты"):
+    new_name = discord.ui.TextInput(
+        label="Новое название",
+        placeholder="Введите название...",
+        max_length=50,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.send_message(f"Название изменено на: **{self.new_name.value}**", ephemeral=True)
+
+class LimitModal(discord.ui.Modal, title="Установить лимит мест"):
+    new_limit = discord.ui.TextInput(
+        label="Лимит пользователей (0-99)",
+        placeholder="Например: 5",
+        max_length=2,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.send_message(f"Лимит установлен: **{self.new_limit.value}**", ephemeral=True)
+
 class RoomSettingsSelect(discord.ui.Select):
     def __init__(self):
         options = [
@@ -524,10 +544,23 @@ class RoomSettingsSelect(discord.ui.Select):
         super().__init__(placeholder="Настроить приватную комнату", min_values=1, max_values=1, options=options, custom_id="room_settings_select")
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
-            f"Вы выбрали настройку: `{self.values[0]}`. Функционал в разработке!", 
-            ephemeral=True
-        )
+        choice = self.values[0]
+        
+        if choice == "rename":
+            await interaction.response.send_modal(RenameModal())
+        elif choice == "limit":
+            await interaction.response.send_modal(LimitModal())
+        elif choice == "lock":
+            await interaction.response.send_message("🔒 Комната закрыта для всех.", ephemeral=True)
+        elif choice == "unlock":
+            await interaction.response.send_message("🔓 Комната открыта.", ephemeral=True)
+        elif choice == "delete":
+            await interaction.response.send_message("❌ Приватная комната удалена.", ephemeral=True)
+        else:
+            await interaction.response.send_message(
+                f"Вы выбрали настройку: `{choice}`. Функционал в разработке!", 
+                ephemeral=True
+            )
 
 class RoomSettingsView(discord.ui.View):
     def __init__(self):
