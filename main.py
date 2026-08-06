@@ -348,10 +348,18 @@ async def add_points(ctx, member: discord.Member, amount: int):
 @bot.command(name='setup_panel')
 @commands.has_permissions(administrator=True)
 async def setup_panel(ctx):
+    embed = discord.Embed()
+            @bot.tree.command(name="setup_settings_panel", description="Создать панель управления приватными комнатами")
+@app_commands.checks.has_permissions(administrator=True)
+async def setup_panel_slash(interaction: discord.Interaction):
     embed = discord.Embed(
         title="✨ Создание приватной комнаты",
         description="Вы можете **создать** собственную приватную комнату с необходимым названием, а впоследствии **гибко настроить** в соответствии с имеющимся функционалом.",
         color=discord.Color.dark_embed()
+    )
+    await interaction.channel.send(embed=embed, view=CreateRoomButtonView())
+    await interaction.response.send_message("✅ Панель успешно создана!", ephemeral=True)
+    
     )
     await ctx.send(embed=embed, view=CreateRoomButtonView())
     try:
