@@ -492,7 +492,8 @@ async def ban(interaction: discord.Interaction, member: discord.Member, days: in
     del_days = min(days, 7) if days > 0 else 0
     await member.ban(reason=reason, delete_message_days=del_days)
     await interaction.response.send_message(f"⛔️ Участник **{member.name}** забанен. Причина: {reason}")
-    @bot.tree.command(name="mute", description="Выдать мут (тайм-аут) участнику")
+  
+@bot.tree.command(name="mute", description="Выдать мут (тайм-аут) участнику")
 @app_commands.describe(member="Участник", duration_minutes="Длительность в минутах", reason="Причина мута")
 @app_commands.checks.has_permissions(moderate_members=True)
 async def mute(interaction: discord.Interaction, member: discord.Member, duration_minutes: int, reason: str = "Причина не указана"):
