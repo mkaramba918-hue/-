@@ -1,108 +1,80 @@
-import discord
-from discord.ext import commands
-from discord.ui import Button, View, Select
-
-# Словарь для отслеживания созданных комнат: {voice_channel_id: owner_id}
+# Хранилище активных приваток: {voice_channel_id: owner_id}
 active_private_channels = {}
 
-class PrivateControlView(View):
+# 1. Модальное окно ввода названия приватки (как на скриншоте 13271.jpg)
+class CreateRoomModal(discord.ui.Modal, title="Настройка приватной комнаты"):
+    room_name = discord.ui.TextInput(
+        label="Название приватной комнаты *",
+        placeholder="Введите название...",
+        max_length=50,
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        member = interaction.user
+        
+        # Ищем категорию, где находится канал с панелью, либо создаем без категории
+        category = interaction.channel.category
+
+        # Настраиваем права: владелец получает полный контроль, остальные могут заходить
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(connect=True),
+            member: discord.PermissionOverwrite(manage_channels=True, connect=True, mute_members=True, deafen_members=True)
+        }
+
+        # Создаем голосовой канал с введенным пользователем названием
+        channel_name = f"🔒 {self.room_name.value}"
+        try:
+            voice_channel = await guild.create_voice_channel(
+                name=channel_name, 
+                category=category, 
+                overwrites=overwrites
+            )
+            active_private_channels[voice_channel.id] = member.id
+
+            # Пытаемся перекинуть пользователя в созданную комнату
+            if member.voice:
+                await member.move_to(voice_channel)
+
+            await interaction.response.send_message(f"✅ Ваша приватная комната **{channel_name}** успешно создана!", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ У бота нет прав на создание голосовых каналов в этой категории!", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Ошибка при создании комнаты: {e}", ephemeral=True)
+
+# 2. Кнопка вызова модального окна в канале `#создать-комнату` (как на скриншоте 13270.jpg)
+class CreateRoomButtonView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Название", style=discord.ButtonStyle.secondary, emoji="✏️", row=0)
-    async def change_name(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(RenameModal())
+    @discord.ui.button(label="Создать приватную комнату", style=discord.ButtonStyle.success, emoji="✨", custom_id="persistent_create_room_btn")
+    async def create_room_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Открываем модальное окно для ввода названия
+        await interaction.response.send_modal(CreateRoomModal())
 
-    @discord.ui.button(label="Лимит", style=discord.ButtonStyle.secondary, emoji="👥", row=0)
-    async def change_limit(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(LimitModal())
+# 3. Команда для отправки этой панели в нужный текстовый канал (чтобы администратор мог её разместить)
+@bot.command(name='setup_panel')
+@commands.has_permissions(administrator=True)
+async def setup_panel(ctx):
+    embed = discord.Embed(
+        title="✨ Создание приватной комнаты",
+        description="Вы можете **создать** собственную приватную комнату с необходимым названием, а впоследствии **гибко настроить** в соответствии с имеющимся функционалом.",
+        color=discord.Color.dark_embed()
+    )
+    # Отправляем сообщение с постоянной кнопкой
+    await ctx.send(embed=embed, view=CreateRoomButtonView())
+    await ctx.message.delete() # Удаляем команду администратора для красоты
 
-    @discord.ui.button(label="Закрыть", style=discord.ButtonStyle.danger, emoji="🔒", row=1)
-    async def lock_room(self, interaction: discord.Interaction, button: Button):
-        vc = interaction.user.voice.channel
-        if vc and active_private_channels.get(vc.id) == interaction.user.id:
-            await vc.set_permissions(interaction.guild.default_role, connect=False)
-            await interaction.response.send_message("🔒 Комната закрыта для всех.", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ Вы не владелец этой комнаты!", ephemeral=True)
-
-    @discord.ui.button(label="Открыть", style=discord.ButtonStyle.success, emoji="🔓", row=1)
-    async def unlock_room(self, interaction: discord.Interaction, button: Button):
-        vc = interaction.user.voice.channel
-        if vc and active_private_channels.get(vc.id) == interaction.user.id:
-            await vc.set_permissions(interaction.guild.default_role, connect=True)
-            await interaction.response.send_message("🔓 Комната открыта для всех.", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ Вы не владелец этой комнаты!", ephemeral=True)
-
-    @discord.ui.button(label="Удалить", style=discord.ButtonStyle.danger, emoji="❌", row=2)
-    async def delete_room(self, interaction: discord.Interaction, button: Button):
-        vc = interaction.user.voice.channel
-        if vc and active_private_channels.get(vc.id) == interaction.user.id:
-            del active_private_channels[vc.id]
-            await vc.delete()
-            await interaction.response.send_message("🗑️ Комната удалена.", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ Вы не владелец этой комнаты!", ephemeral=True)
-
-class RenameModal(discord.ui.Modal, title="Изменить название комнаты"):
-    new_name = discord.ui.TextInput(label="Новое название", placeholder="Введи название...", max_length=50)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        vc = interaction.user.voice.channel
-        if vc and active_private_channels.get(vc.id) == interaction.user.id:
-            await vc.edit(name=self.new_name.value)
-            await interaction.response.send_message(f"✅ Название изменено на: **{self.new_name.value}**", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ Ошибка: вы не в своей комнате.", ephemeral=True)
-
-class LimitModal(discord.ui.Modal, title="Изменить лимит пользователей"):
-    new_limit = discord.ui.TextInput(label="Лимит от 0 до 99", placeholder="0 — без лимита", max_length=2)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        vc = interaction.user.voice.channel
-        if vc and active_private_channels.get(vc.id) == interaction.user.id:
+# 4. Автоматическое удаление пустых приваток
+@bot.event
+async def on_voice_state_update(member, before, after):
+    if before.channel and before.channel.id in active_private_channels:
+        if len(before.channel.members) == 0:
+            room_id = before.channel.id
+            del active_private_channels[room_id]
             try:
-                limit = int(self.new_limit.value)
-                await vc.edit(user_limit=limit)
-                await interaction.response.send_message(f"✅ Лимит изменен: **{limit}**", ephemeral=True)
-            except ValueError:
-                await interaction.response.send_message("❌ Введите число!", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ Ошибка: вы не в своей комнате.", ephemeral=True)
-
-# Событие отслеживания захода в канал-триггер
-def setup_private_rooms(bot):
-    @bot.event
-    async def on_voice_state_update(member, before, after):
-        # ЗАМЕНИТЕ ID_КАНАЛА_СОЗДАТЕЛЯ на ID вашего голосового канала создания приваток
-        CREATOR_CHANNEL_ID = 123456789012345678  
-
-        if after.channel and after.channel.id == CREATOR_CHANNEL_ID:
-            guild = member.guild
-            category = after.channel.category  # Создает в той же категории
-            
-            # Создаем приватный канал
-            overwrites = {
-                guild.default_role: discord.PermissionOverwrite(connect=True),
-                member: discord.PermissionOverwrite(manage_channels=True, connect=True, mute_members=True, deafen_members=True)
-            }
-            
-            channel_name = f"🔊 │ Приватка {member.display_name}"
-            voice_channel = await guild.create_voice_channel(name=channel_name, category=category, overwrites=overwrites)
-            
-            active_private_channels[voice_channel.id] = member.id
-            
-            # Перемещаем пользователя в его новую комнату
-            try:
-                await member.move_to(voice_channel)
+                await before.channel.delete()
             except:
                 pass
-
-        # Удаление пустых приваток
-        if before.channel and before.channel.id in active_private_channels:
-            if len(before.channel.members) == 0:
-                room_id = before.channel.id
-                del active_private_channels[room_id]
-                await before.channel.delete()
-      
+                
