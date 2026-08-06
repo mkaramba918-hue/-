@@ -1,460 +1,267 @@
-import asyncio
-from datetime import timedelta
 import os
-import sys
+import asyncio
+import datetime
 import discord
-from discord import app_commands
 from discord.ext import commands
 import yt_dlp
 
-# ==============================================================================
-# 🔑 НАСТРОЙКА И ИНИЦИАЛИЗАЦИЯ
-# ==============================================================================
-# Токен подтягивается из Environment Variables на хостинге
-TOKEN = os.getenv("DISCORD_TOKEN")
-
+# ---------------------------------------------------------
+# 1. Настройки Intents и Инициализация
+# ---------------------------------------------------------
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Хранилище предупреждений
-user_warnings = {}
-
-# Очередь воспроизведения {guild_id: [query_1, query_2, ...]}
-queues = {}
-
-# Настройки yt-dlp для извлечения аудио
-YTDL_OPTIONS = {
-    "format": "bestaudio/best",
-    "extractflat": False,
-    "noplaylist": True,
-    "nocheckcertificate": True,
-    "ignoreerrors": False,
-    "logtostderr": False,
-    "quiet": True,
-    "no_warnings": True,
-    "default_search": "auto",
-    "source_address": "0.0.0.0",
+# ---------------------------------------------------------
+# ID РОЛЕЙ НА СЕРВЕРЕ
+# ---------------------------------------------------------
+ROLE_IDS = {
+    "gmod": 1512588171756699830,    # Главный модератор
+    "gadmin": 1512588171756699830,  # Главный администратор (у вас указан тот же ID, при необходимости измените)
+    "admin": 1484124657563996170,   # Администратор
+    "mod": 1530640511420076143      # Модератор
 }
 
-# Настройки FFmpeg для ровного и стабильного потока
+# ---------------------------------------------------------
+# 2. Настройки yt-dlp и Музыки
+# ---------------------------------------------------------
+YTDL_OPTIONS = {
+    'format': 'bestaudio/best',
+    'extractaudio': True,
+    'audioformat': 'mp3',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
+    'noplaylist': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'auto',
+    'source_address': '0.0.0.0',
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['tv', 'android'],
+            'skip': ['hls', 'dash']
+        }
+    },
+    'geo_bypass': True,
+    'http_headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+    }
+}
+
 FFMPEG_OPTIONS = {
-    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-    "options": "-vn",
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    'options': '-vn'
 }
 
 ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
 
-
 class YTDLSource(discord.PCMVolumeTransformer):
-
     def __init__(self, source, *, data, volume=0.5):
         super().__init__(source, volume)
         self.data = data
-        self.title = data.get("title")
-        self.url = data.get("url")
+        self.title = data.get('title')
+        self.url = data.get('url')
 
     @classmethod
-    async def from_url(cls, url, *, loop=None):
+    async def from_url(cls, url, *, loop=None, stream=True):
         loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(
-            None, lambda: ytdl.extract_info(url, download=False)
-        )
+        if not url.startswith("http://") and not url.startswith("https://"):
+            search_query = f"ytsearch:{url}"
+        elif "spotify.com" in url or "apple.com" in url:
+            search_query = f"ytsearch:{url}"
+        else:
+            search_query = url
 
-        if "entries" in data:
-            data = data["entries"][0]
+        try:
+            data = await loop.run_in_executor(
+                None, 
+                lambda: ytdl.extract_info(search_query, download=not stream)
+            )
+        except Exception as e:
+            err_msg = str(e).lower()
+            if "drm" in err_msg or "geo restriction" in err_msg or "confirm" in err_msg:
+                data = await loop.run_in_executor(
+                    None, 
+                    lambda: ytdl.extract_info(f"ytsearch:{url}", download=not stream)
+                )
+            else:
+                raise e
 
-        filename = data["url"]
-        return cls(
-            discord.FFmpegPCMAudio(filename, **FFMPEG_OPTIONS), data=data
-        )
+        if 'entries' in data:
+            data = data['entries'][0]
 
+        filename = data['url'] if stream else ytdl.prepare_filename(data)
+        return cls(discord.FFmpegPCMAudio(filename, **FFMPEG_OPTIONS), data=data)
 
 @bot.event
 async def on_ready():
-    print("----------------------------------------")
-    print(f"🤖 Авторизован как: {bot.user}")
+    print(f"🤖 Авторизован как: {bot.user.name} (ID: {bot.user.id})")
+    print("--------------------------------------------------")
 
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ Успешно синхронизировано {len(synced)} слэш-команд!")
-    except Exception as e:
-        print(f"❌ Ошибка синхронизации: {e}")
+# ---------------------------------------------------------
+# Проверка: есть ли у пользователя нужная должность для вызова команды
+# ---------------------------------------------------------
+def has_role_or_higher(*role_keys):
+    async def predicate(ctx):
+        # Разрешаем создателю сервера (админу) обходить проверку
+        if ctx.author == ctx.guild.owner:
+            return True
+            
+        user_role_ids = [r.id for r in ctx.author.roles]
+        allowed_ids = [ROLE_IDS[key] for key in role_keys if key in ROLE_IDS]
+        
+        if any(r_id in user_role_ids for r_id in allowed_ids):
+            return True
+            
+        raise commands.MissingRole("У вас недостаточно прав для использования этой команды!")
+    return commands.check(predicate)
 
-    print("🚀 Бот полностью запущен в облаке и готов к работе 24/7!")
-    print("----------------------------------------")
-
-
-# ==============================================================================
-# 🎵 МУЗЫКАЛЬНЫЕ КОМАНДЫ (Direct FFmpeg / yt-dlp)
-# ==============================================================================
-
-
-def play_next(interaction: discord.Interaction):
-    guild_id = interaction.guild_id
-    if guild_id in queues and len(queues[guild_id]) > 0:
-        next_track = queues[guild_id].pop(0)
-        voice_client = interaction.guild.voice_client
-
-        if voice_client and voice_client.is_connected():
-
-            async def start_play():
-                try:
-                    player = await YTDLSource.from_url(
-                        next_track, loop=bot.loop
-                    )
-                    voice_client.play(
-                        player,
-                        after=lambda e: (
-                            print(f"Ошибка воспроизведения: {e}")
-                            if e
-                            else play_next(interaction)
-                        ),
-                    )
-                    if interaction.channel:
-                        await interaction.channel.send(
-                            f"▶️ Сейчас играет: **{player.title}**"
-                        )
-                except Exception as ex:
-                    print(f"Ошибка воспроизведения трека: {ex}")
-                    play_next(interaction)
-
-            asyncio.run_coroutine_threadsafe(start_play(), bot.loop)
-
-
-@bot.tree.command(
-    name="play", description="Включить песню по названию или ссылке"
-)
-async def play(interaction: discord.Interaction, query: str):
-    if not interaction.user.voice:
-        await interaction.response.send_message(
-            "❌ Сначала зайдите в голосовой канал!", ephemeral=True
-        )
-        return
-
-    await interaction.response.defer()
-
-    voice_client = interaction.guild.voice_client
-
-    if not voice_client:
-        try:
-            voice_client = await interaction.user.voice.channel.connect()
-        except Exception as e:
-            await interaction.followup.send(
-                f"❌ Не удалось подключиться к каналу: `{e}`"
-            )
-            return
-
-    guild_id = interaction.guild_id
-    if guild_id not in queues:
-        queues[guild_id] = []
-
-    if voice_client.is_playing() or voice_client.is_paused():
-        queues[guild_id].append(query)
-        await interaction.followup.send(
-            f"➕ Добавлено в очередь: `{query}`"
-        )
+# Обработчик ошибок для проверки прав
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.MissingRole) or isinstance(error, commands.CheckFailure):
+        await ctx.send("❌ У вас нет прав для выполнения этой команды!", delete_after=5)
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("❌ Вы указали не все аргументы! Пример: `!gmod @Пользователь`", delete_after=5)
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send("❌ Ошибка в аргументах (убедитесь, что правильно упомянули пользователя).", delete_after=5)
     else:
-        try:
-            player = await YTDLSource.from_url(query, loop=bot.loop)
-            voice_client.play(
-                player,
-                after=lambda e: (
-                    print(f"Ошибка: {e}") if e else play_next(interaction)
-                ),
-            )
-            await interaction.followup.send(
-                f"▶️ Сейчас играет: **{player.title}**"
-            )
-        except Exception as e:
-            await interaction.followup.send(
-                f"❌ Ошибка загрузки трека: `{e}`"
-            )
+        print(f"Ошибка в команде: {error}")
 
-
-@bot.tree.command(name="skip", description="Пропустить текущую песню")
-async def skip(interaction: discord.Interaction):
-    vc = interaction.guild.voice_client
-    if vc and (vc.is_playing() or vc.is_paused()):
-        vc.stop()
-        await interaction.response.send_message("⏭️ Трек пропущен.")
-    else:
-        await interaction.response.send_message(
-            "❌ Сейчас ничего не играет.", ephemeral=True
-        )
-
-
-@bot.tree.command(name="pause", description="Поставить песню на паузу")
-async def pause(interaction: discord.Interaction):
-    vc = interaction.guild.voice_client
-    if vc and vc.is_playing():
-        vc.pause()
-        await interaction.response.send_message("⏸️ Воспроизведение приостановлено.")
-    else:
-        await interaction.response.send_message(
-            "❌ Воспроизведение не запущенo или уже на паузе.", ephemeral=True
-        )
-
-
-@bot.tree.command(name="resume", description="Снять песню с паузы")
-async def resume(interaction: discord.Interaction):
-    vc = interaction.guild.voice_client
-    if vc and vc.is_paused():
-        vc.resume()
-        await interaction.response.send_message("▶️ Воспроизведение продолжено.")
-    else:
-        await interaction.response.send_message(
-            "❌ Музыка не стоит на паузе.", ephemeral=True
-        )
-
-
-@bot.tree.command(name="stop", description="Остановить музыку и отключить бота")
-async def stop(interaction: discord.Interaction):
-    vc = interaction.guild.voice_client
-    guild_id = interaction.guild_id
-
-    if guild_id in queues:
-        queues[guild_id].clear()
-
-    if vc:
-        vc.stop()
-        await vc.disconnect()
-        await interaction.response.send_message(
-            "⏹️ Воспроизведение остановлено, бот отключен."
-        )
-    else:
-        await interaction.response.send_message(
-            "❌ Бот не находится в голосовом канале.", ephemeral=True
-        )
-
-
-# ==============================================================================
-# 🛡️ КОМАНДЫ МОДЕРАЦИИ
-# ==============================================================================
-
-
-@bot.tree.command(
-    name="clear", description="Удалить указанное количество сообщений"
-)
-@app_commands.checks.has_permissions(manage_messages=True)
-async def clear(interaction: discord.Interaction, amount: int):
-    if amount <= 0:
-        await interaction.response.send_message(
-            "❌ Укажите число больше 0.", ephemeral=True
-        )
-        return
-
-    deleted = await interaction.channel.purge(limit=amount)
-    await interaction.response.send_message(
-        f"🧹 Успешно удалено {len(deleted)} сообщений.", ephemeral=True
-    )
-
-
-@bot.tree.command(name="kick", description="Выгнать участника с сервера")
-@app_commands.checks.has_permissions(kick_members=True)
-async def kick(
-    interaction: discord.Interaction,
-    member: discord.Member,
-    reason: str = "Не указана",
-):
-    if member == interaction.user:
-        await interaction.response.send_message(
-            "❌ Вы не можете кикнуть самого себя!", ephemeral=True
-        )
-        return
-
-    await member.kick(reason=reason)
-    await interaction.response.send_message(
-        f"👢 {member.mention} был кикнут.\n**Причина:** {reason}"
-    )
-
-
-@bot.tree.command(name="ban", description="Забанить участника на сервере")
-@app_commands.checks.has_permissions(ban_members=True)
-async def ban(
-    interaction: discord.Interaction,
-    member: discord.Member,
-    reason: str = "Не указана",
-):
-    if member == interaction.user:
-        await interaction.response.send_message(
-            "❌ Вы не можете забанить самого себя!", ephemeral=True
-        )
-        return
-
-    await member.ban(reason=reason)
-    await interaction.response.send_message(
-        f"🔨 {member.mention} забанен.\n**Причина:** {reason}"
-    )
-
-
-@bot.tree.command(
-    name="unban", description="Разбанить пользователя по ID или имени"
-)
-@app_commands.checks.has_permissions(ban_members=True)
-async def unban(interaction: discord.Interaction, user_input: str):
-    await interaction.response.defer(ephemeral=True)
-
-    banned_users = [entry async for entry in interaction.guild.bans()]
-    user_to_unban = None
-
-    for ban_entry in banned_users:
-        user = ban_entry.user
-        if str(user.id) == user_input or str(user) == user_input:
-            user_to_unban = user
-            break
-
-    if user_to_unban is None:
-        await interaction.followup.send(
-            f"❌ Пользователь `{user_input}` не найден в списке банов."
-        )
-        return
-
-    await interaction.guild.unban(user_to_unban)
-    await interaction.followup.send(
-        f"🔓 Пользователь **{user_to_unban}** успешно разбанен!"
-    )
-
-
-@bot.tree.command(name="mute", description="Выдать тайм-аут участнику")
-@app_commands.checks.has_permissions(moderate_members=True)
-async def mute(
-    interaction: discord.Interaction,
-    member: discord.Member,
-    minutes: int,
-    reason: str = "Не указана",
-):
-    if minutes <= 0:
-        await interaction.response.send_message(
-            "❌ Время должно быть больше 0 минут.", ephemeral=True
-        )
-        return
-
-    time = timedelta(minutes=minutes)
-    await member.timeout(time, reason=reason)
-    await interaction.response.send_message(
-        f"🔇 {member.mention} получил мут на {minutes} мин.\n**Причина:** {reason}"
-    )
-
-
-@bot.tree.command(name="unmute", description="Снять тайм-аут с участника")
-@app_commands.checks.has_permissions(moderate_members=True)
-async def unmute(interaction: discord.Interaction, member: discord.Member):
-    await member.timeout(None)
-    await interaction.response.send_message(
-        f"🔊 Мут с {member.mention} успешно снят!"
-    )
-
-
-@bot.tree.command(
-    name="warn", description="Выдать предупреждение пользователю"
-)
-@app_commands.checks.has_permissions(kick_members=True)
-async def warn(
-    interaction: discord.Interaction,
-    member: discord.Member,
-    reason: str = "Не указана",
-):
-    if member.id not in user_warnings:
-        user_warnings[member.id] = []
-
-    user_warnings[member.id].append(reason)
-
-    await interaction.response.send_message(
-        f"⚠️ {member.mention} получил предупреждение.\n"
-        f"**Причина:** {reason}\n"
-        f"**Всего предупреждений:** {len(user_warnings[member.id])}"
-    )
-
-
-@bot.tree.command(
-    name="unwarn",
-    description="Снять предупреждение (номер варна или 0 чтобы снять все)",
-)
-@app_commands.checks.has_permissions(kick_members=True)
-async def unwarn(
-    interaction: discord.Interaction,
-    member: discord.Member,
-    warn_number: int = 0,
-):
-    if member.id not in user_warnings or not user_warnings[member.id]:
-        await interaction.response.send_message(
-            f"❌ У {member.mention} нет активных предупреждений.",
-            ephemeral=True,
-        )
-        return
-
-    if warn_number <= 0:
-        user_warnings[member.id].clear()
-        await interaction.response.send_message(
-            f"🧹 Все предупреждения с {member.mention} успешно сняты!"
-        )
-        return
-
-    if warn_number > len(user_warnings[member.id]):
-        await interaction.response.send_message(
-            f"❌ У пользователя всего {len(user_warnings[member.id])} варн(а). Укажите правильный номер!",
-            ephemeral=True,
-        )
-        return
-
-    removed_reason = user_warnings[member.id].pop(warn_number - 1)
-    await interaction.response.send_message(
-        f'✅ Предупреждение №{warn_number} (*"{removed_reason}"*) с {member.mention} снято.\n'
-        f"Осталось предупреждений: {len(user_warnings[member.id])}"
-    )
-
-
-@bot.tree.command(
-    name="warnings", description="Посмотреть предупреждения пользователя"
-)
-async def warnings(
-    interaction: discord.Interaction, member: discord.Member = None
-):
-    target = member or interaction.user
-
-    if target.id not in user_warnings or not user_warnings[target.id]:
-        await interaction.response.send_message(
-            f"✅ У {target.mention} нет активных предупреждений."
-        )
-        return
-
-    text = "\n".join(
-        f"{i+1}. {w}" for i, w in enumerate(user_warnings[target.id])
-    )
-    await interaction.response.send_message(
-        f"⚠️ Предупреждения {target.mention}:\n{text}"
-    )
-
-
-# ==============================================================================
-# ⚙️ ОБРАБОТКА ОШИБОК И ЗАПУСК
-# ==============================================================================
-
-
-@bot.tree.error
-async def on_app_command_error(
-    interaction: discord.Interaction, error: app_commands.AppCommandError
-):
-    if isinstance(error, app_commands.MissingPermissions):
-        msg = "❌ У вас недостаточно прав для использования этой команды!"
-    else:
-        print(f"Ошибка команды: {error}", file=sys.stderr)
-        msg = f"⚠️ Произошла ошибка: `{error}`"
-
-    if interaction.response.is_done():
-        await interaction.followup.send(msg, ephemeral=True)
-    else:
-        await interaction.response.send_message(msg, ephemeral=True)
-
-
-if __name__ == "__main__":
-    if not TOKEN:
-        print(
-            "❌ Ошибка: Переменная DISCORD_TOKEN не найдена! Укажите её в настройках хостинга."
-        )
-    else:
-        bot.run(TOKEN)
+# ---------------------------------------------------------
+# Функция для назначения/снятия с должности
+# ---------------------------------------------------------
+async def handle_specific_role(ctx, member: discord.Member, role_key: str, action: str):
+    role_id = ROLE_IDS.get(role_key)
+    role = ctx.guild.get_role(role_id)
     
+    if not role:
+        return await ctx.send(f"❌ Должность для `{role_key}` не найдена на сервере (проверьте ID).")
+    
+    try:
+        if action == "add":
+            await member.add_roles(role)
+            await ctx.send(f"🎖 Участник **{member.display_name}** назначен на должность: **{role.name}**!")
+        elif action == "remove":
+            await member.remove_roles(role)
+            await ctx.send(f"🛡 Участник **{member.display_name}** снят с должности: **{role.name}**.")
+    except discord.Forbidden:
+        await ctx.send("❌ У бота недостаточно прав (передвиньте роль бота выше в списке ролей сервера).")
+
+# ---------------------------------------------------------
+# КОМАНДЫ НАЗНАЧЕНИЯ И СНЯТИЯ С ДОЛЖНОСТЕЙ
+# ---------------------------------------------------------
+
+# Главный модератор (могут использовать только Главный администратор / Гл. модератор или владелец)
+@bot.command(name="gmod")
+@has_role_or_higher("gadmin", "gmod")
+async def cmd_gmod(ctx, member: discord.Member):
+    await handle_specific_role(ctx, member, "gmod", "add")
+
+@bot.command(name="ungmod")
+@has_role_or_higher("gadmin", "gmod")
+async def cmd_ungmod(ctx, member: discord.Member):
+    await handle_specific_role(ctx, member, "gmod", "remove")
+
+
+# Главный администратор
+@bot.command(name="gadmin")
+@has_role_or_higher("gadmin")
+async def cmd_gadmin(ctx, member: discord.Member):
+    await handle_specific_role(ctx, member, "gadmin", "add")
+
+@bot.command(name="ungadmin")
+@has_role_or_higher("gadmin")
+async def cmd_ungadmin(ctx, member: discord.Member):
+    await handle_specific_role(ctx, member, "gadmin", "remove")
+
+
+# Администратор
+@bot.command(name="admin")
+@has_role_or_higher("gadmin")
+async def cmd_admin(ctx, member: discord.Member):
+    await handle_specific_role(ctx, member, "admin", "add")
+
+@bot.command(name="unadmin")
+@has_role_or_higher("gadmin")
+async def cmd_unadmin(ctx, member: discord.Member):
+    await handle_specific_role(ctx, member, "admin", "remove")
+
+
+# Модератор
+@bot.command(name="mod")
+@has_role_or_higher("gadmin", "gmod", "admin")
+async def cmd_mod(ctx, member: discord.Member):
+    await handle_specific_role(ctx, member, "mod", "add")
+
+@bot.command(name="unmod")
+@has_role_or_higher("gadmin", "gmod", "admin")
+async def cmd_unmod(ctx, member: discord.Member):
+    await handle_specific_role(ctx, member, "mod", "remove")
+
+
+# ---------------------------------------------------------
+# Модерация и Музыка
+# ---------------------------------------------------------
+@bot.command(name="clear")
+@commands.has_permissions(manage_messages=True)
+async def clear(ctx, amount: int = 5):
+    await ctx.channel.purge(limit=amount + 1)
+    await ctx.send(f"🧹 Удалено сообщений: **{amount}**", delete_after=3)
+
+@bot.command(name="kick")
+@commands.has_permissions(kick_members=True)
+async def kick(ctx, member: discord.Member, *, reason: str = "Причина не указана"):
+    await member.kick(reason=reason)
+    await ctx.send(f"🚪 Участник **{member.name}** кикнут. Причина: {reason}")
+
+@bot.command(name="ban")
+@commands.has_permissions(ban_members=True)
+async def ban(ctx, member: discord.Member, *, reason: str = "Причина не указана"):
+    await member.ban(reason=reason)
+    await ctx.send(f"⛔️ Участник **{member.name}** забанен. Причина: {reason}")
+
+@bot.command(name="mute")
+@commands.has_permissions(moderate_members=True)
+async def mute(ctx, member: discord.Member, duration_minutes: int = 10, *, reason: str = "Причина не указана"):
+    duration = discord.utils.utcnow() + datetime.timedelta(minutes=duration_minutes)
+    await member.timeout(duration, reason=reason)
+    await ctx.send(f"🔇 **{member.name}** в муте на {duration_minutes} мин. Причина: {reason}")
+
+@bot.command(name="play")
+async def play(ctx, *, url: str):
+    if not ctx.author.voice:
+        return await ctx.send("❌ Вы должны находиться в голосовом канале!")
+    channel = ctx.author.voice.channel
+    if ctx.voice_client is None:
+        await channel.connect()
+    elif ctx.voice_client.channel != channel:
+        await ctx.voice_client.move_to(channel)
+    async with ctx.typing():
+        try:
+            player = await YTDLSource.from_url(url, loop=bot.loop, stream=True)
+            ctx.voice_client.play(player, after=lambda e: print(f'Ошибка плеера: {e}') if e else None)
+            await ctx.send(f"🎶 Сейчас играет: **{player.title}**")
+        except Exception as e:
+            await ctx.send(f"❌ Ошибка воспроизведения: `{str(e)}`")
+
+@bot.command(name="stop")
+async def stop(ctx):
+    if ctx.voice_client:
+        await ctx.voice_client.disconnect()
+        await ctx.send("⏹ Воспроизведение остановлено, бот отключен.")
+    else:
+        await ctx.send("❌ Бот не подключен к голосовому каналу.")
+
+token = os.getenv("DISCORD_TOKEN")
+if token:
+    bot.run(token)
+else:
+    print("❌ ОШИБКА: Переменная DISCORD_TOKEN не найдена в окружении!")
+            
