@@ -349,7 +349,7 @@ async def add_points(ctx, member: discord.Member, amount: int):
 @commands.has_permissions(administrator=True)
 async def setup_panel(ctx):
     embed = discord.Embed()
-            @bot.tree.command(name="setup_settings_panel", description="Создать панель управления приватными комнатами")
+@bot.tree.command(name="setup_settings_panel", description="Создать панель управления приватными комнатами")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_panel_slash(interaction: discord.Interaction):
     embed = discord.Embed(
