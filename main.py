@@ -4,6 +4,25 @@ import datetime
 import discord
 from discord.ext import commands
 import yt_dlp
+from threading import Thread
+from flask import Flask
+
+# ---------------------------------------------------------
+# 0. ВЕБ-СЕРВЕР ДЛЯ ПРЕДОТВРАЩЕНИЯ ОТКЛЮЧЕНИЯ НА RENDER
+# ---------------------------------------------------------
+app = Flask("")
+
+@app.route("/")
+def home():
+    return "Bot is alive and running 24/7!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
+
+def keep_alive():
+    t = Thread(target=run_web)
+    t.start()
 
 # ---------------------------------------------------------
 # 1. Настройки Intents и Инициализация
@@ -216,18 +235,15 @@ async def kick(ctx, member: discord.Member, *, reason: str = "Причина н�
     await member.kick(reason=reason)
     await ctx.send(f"🚪 Участник **{member.name}** кикнут. Причина: {reason}")
 
-# Команда бана с уведомлением в ЛС и поддержкой количества дней
 @bot.command(name="ban")
 @commands.has_permissions(ban_members=True)
 async def ban(ctx, member: discord.Member, days: int = 0, *, reason: str = "Причина не указана"):
-    # Пытаемся отправить сообщение в ЛС забаненному пользователю
     try:
         if days > 0:
             await member.send(f"⛔️ Вы были забанены на сервере **{ctx.guild.name}** на **{days} дн.** Причина: {reason}")
         else:
             await member.send(f"⛔️ Вы были забанены на сервере **{ctx.guild.name}** навсегда. Причина: {reason}")
     except discord.Forbidden:
-        # Если у пользователя закрыты ЛС, бот просто пропустит этот шаг и не выдаст ошибку
         pass
 
     del_days = min(days, 7) if days > 0 else 0
@@ -270,9 +286,16 @@ async def stop(ctx):
     else:
         await ctx.send("❌ Бот не подключен к голосовому каналу.")
 
-token = os.getenv("DISCORD_TOKEN")
-if token:
-    bot.run(token)
-else:
-    print("❌ ОШИБКА: Переменная DISCORD_TOKEN не найдена в окружении!")
+# ---------------------------------------------------------
+# ЗАПУСК БОТА И ВЕБ-СЕРВЕРА
+# ---------------------------------------------------------
+if __name__ == "__main__":
+    # Запускаем веб-сервер в отдельном потоке для Render
+    keep_alive()
     
+    token = os.getenv("DISCORD_TOKEN")
+    if token:
+        bot.run(token)
+    else:
+        print("❌ ОШИБКА: Переменная DISCORD_TOKEN не найдена в окружении!")
+        
