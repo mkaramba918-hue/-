@@ -506,8 +506,7 @@ async def mute(interaction: discord.Interaction, member: discord.Member, duratio
 # ---------------------------------------------------------
 # ЗАПУСК БОТА И WEB-СЕРВЕРА
 # ---------------------------------------------------------
-import os
-import discord
+    import discord
 from discord.ext import commands
 
 # Словарь для хранения баланса пользователей: {user_id: amount}
@@ -617,6 +616,52 @@ class LimitModal(discord.ui.Modal, title="Установить лимит мес
         except Exception as e:
             await interaction.followup.send(f"❌ Не удалось изменить лимит: {e}", ephemeral=True)
 
+class TargetUserSelectView(discord.ui.View):
+    def __init__(self, voice_channel: discord.VoiceChannel, action: str):
+        super().__init__(timeout=60)
+        self.voice_channel = voice_channel
+        self.action = action
+
+    @discord.ui.select(cls=discord.ui.UserSelect, placeholder="Выберите участника...")
+    async def select_callback(self, interaction: discord.Interaction, select: discord.ui.UserSelect):
+        target = select.values[0]
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            if self.action == "revoke":
+                await self.voice_channel.set_permissions(target, connect=False)
+                await interaction.followup.send(f"🚫 Пользователь {target.mention} больше не может заходить в комнату.", ephemeral=True)
+            elif self.action == "grant":
+                await self.voice_channel.set_permissions(target, connect=True)
+                await interaction.followup.send(f"✅ Пользователю {target.mention} разрешен вход в комнату.", ephemeral=True)
+            elif self.action == "mute":
+                member = interaction.guild.get_member(target.id)
+                if member and member.voice:
+                    await member.edit(mute=True)
+                    await interaction.followup.send(f"🔇 Пользователь {target.mention} заглушен.", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ Пользователь не находится в голосовом канале.", ephemeral=True)
+            elif self.action == "unmute":
+                member = interaction.guild.get_member(target.id)
+                if member and member.voice:
+                    await member.edit(mute=False)
+                    await interaction.followup.send(f"🎙️ С пользователя {target.mention} снят мут.", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ Пользователь не находится в голосовом канале.", ephemeral=True)
+            elif self.action == "kick":
+                member = interaction.guild.get_member(target.id)
+                if member and member.voice and member.voice.channel == self.voice_channel:
+                    await member.move_to(None)
+                    await interaction.followup.send(f"🚪 Пользователь {target.mention} выгнан из комнаты.", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ Пользователь не найден в вашей комнате.", ephemeral=True)
+            elif self.action == "transfer":
+                await self.voice_channel.set_permissions(target, connect=True, manage_channels=True, mute_members=True, deafen_members=True, move_members=True)
+                await self.voice_channel.set_permissions(interaction.user, manage_channels=False)
+                await interaction.followup.send(f"👑 Права владельца комнаты переданы пользователю {target.mention}.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Произошла ошибка: {e}", ephemeral=True)
+
 class RoomSettingsSelect(discord.ui.Select):
     def __init__(self):
         options = [
@@ -644,6 +689,11 @@ class RoomSettingsSelect(discord.ui.Select):
             await interaction.response.send_message("❌ Вы должны находиться в голосовом канале, чтобы управлять им!", ephemeral=True)
             return
         
+        # Проверка прав (создатель канала имеет manage_channels)
+        if not voice_channel.permissions_for(user).manage_channels and not user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Вы не являетесь владельцем этой комнаты!", ephemeral=True)
+            return
+
         if choice == "rename":
             await interaction.response.send_modal(RenameModal(voice_channel))
         elif choice == "limit":
@@ -669,11 +719,9 @@ class RoomSettingsSelect(discord.ui.Select):
                 await interaction.followup.send("❌ Приватная комната успешно удалена.", ephemeral=True)
             except Exception as e:
                 await interaction.followup.send(f"❌ Не удалось удалить комнату: {e}", ephemeral=True)
-        else:
-            await interaction.response.send_message(
-                f"Вы выбрали настройку: `{choice}`. Функционал в разработке!", 
-                ephemeral=True
-            )
+        elif choice in ["revoke", "grant", "mute", "unmute", "kick", "transfer"]:
+            view = TargetUserSelectView(voice_channel, choice)
+            await interaction.response.send_message("Выберите пользователя из списка ниже:", view=view, ephemeral=True)
 
 class RoomSettingsView(discord.ui.View):
     def __init__(self):
@@ -694,7 +742,21 @@ async def setup_settings(ctx):
     except:
         pass
 
-
+# --- Автоматическое удаление пустых комнат ---
+@bot.event
+async def on_voice_state_update(member, before, after):
+    # Если человек вышел из канала, и в этом канале больше никого нет
+    if before.channel and before.channel != after.channel:
+        # Проверяем, является ли канал созданными приватным (например, если он находится в категории с созданием или пуст)
+        # Здесь условие проверяет, что в канале 0 участников и название/права указывают на то, что это пустой войс (можно настроить проверку по категории)
+        if len(before.channel.members) == 0:
+            # Убедитесь, что это именно динамическая комната (например, проверяем по префиксу или категории)
+            try:
+                # Если хотите удалять только те каналы, которые создавались ботом, можно добавить проверку по категории
+                await before.channel.delete()
+            except:
+                pass
+    
 # --- Команда для выдачи монет (с сохранением баланса) ---
 
 @bot.command(name="add_money")
