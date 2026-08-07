@@ -198,7 +198,7 @@ async def handle_specific_role_slash(interaction: discord.Interaction, member: d
 # ---------------------------------------------------------
 # 4. МАГАЗИН РОЛЕЙ (UI)
 # ---------------------------------------------------------
-import sqlite3
+  import sqlite3
 import discord
 from discord.ext import commands
 
@@ -212,16 +212,16 @@ def init_db():
 
 init_db()
 
-# --- Команда для установки канала логов ---
-@bot.command(name="setlog")
-@commands.has_permissions(administrator=True)
-async def setlog(ctx, channel: discord.TextChannel):
+# --- Слеш-команда для установки канала логов ---
+@bot.tree.command(name="setlog", description="Установить канал для отправки логов бота")
+@app_commands.checks.has_permissions(administrator=True)
+async def setlog(interaction: discord.Interaction, channel: discord.TextChannel):
     conn = sqlite3.connect('economy.db')
     cursor = conn.cursor()
     cursor.execute('REPLACE INTO settings (key, value) VALUES (?, ?)', ('log_channel_id', channel.id))
     conn.commit()
     conn.close()
-    await ctx.send(f"✅ Канал для логов успешно установлен: {channel.mention}")
+    await interaction.response.send_message(f"✅ Канал для логов успешно установлен: {channel.mention}", ephemeral=True)
 
 
 # --- Функция отправки логов через базу данных ---
@@ -242,7 +242,7 @@ async def send_log(guild, message):
         else:
             print("❌ Сохраненный канал логов не найден на сервере!")
     else:
-        print("❌ Канал логов не настроен! Введите команду !setlog #канал")
+        print("❌ Канал логов не настроен! Введите команду /setlog")
 
 
 # --- Класс магазина ролей ---
@@ -277,7 +277,8 @@ class RoleShopView(discord.ui.View):
                 )
 
         if options:
-            select = discord.Select(placeholder="Выберите роль для покупки...", options=options[:25], custom_id="role_shop_select")
+            # ИСПРАВЛЕНО: discord.ui.Select вместо discord.Select
+            select = discord.ui.Select(placeholder="Выберите роль для покупки...", options=options[:25], custom_id="role_shop_select")
             select.callback = self.select_callback
             self.add_item(select)
 
@@ -344,7 +345,7 @@ async def shop(interaction: discord.Interaction):
         color=discord.Color.blue()
     )
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-    
+        
 # ---------------------------------------------------------
 # 5. КОМАНДЫ ЭКОНОМИКИ, НАГРАД И МАГАЗИНА
 # ---------------------------------------------------------
