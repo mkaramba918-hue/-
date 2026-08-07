@@ -200,19 +200,29 @@ async def handle_specific_role_slash(interaction: discord.Interaction, member: d
 # ---------------------------------------------------------
 # --- Функция отправки логов ---
 async def send_log(guild, message):
-    # Ищем канал с точным названием "📜︱логи"
+    # Ищем канал с точным названием или по подстроке "логи"
     log_channel = discord.utils.get(guild.text_channels, name="📜︱логи")
+    
+    if not log_channel:
+        for channel in guild.text_channels:
+            if "логи" in channel.name.lower():
+                log_channel = channel
+                break
+                
     if log_channel:
         try:
             await log_channel.send(message)
+            print(f"Лог успешно отправлен в канал #{log_channel.name}")
         except Exception as e:
-            print(f"Не удалось отправить лог: {e}")
+            print(f"❌ Ошибка отправки в канал логов: {e}")
+    else:
+        print(f"❌ Канал для логов ('📜︱логи') не найден на сервере {guild.name}!")
 
 
-# --- Обновленный класс магазина ролей с логами и таймаутом ---
+# --- Класс магазина ролей ---
 class RoleShopView(discord.ui.View):
     def __init__(self, guild: discord.Guild):
-        super().__init__(timeout=180)  # Изменили на таймер 3 минуты, чтобы избежать ошибки "Приложение не отвечает"
+        super().__init__(timeout=180)  # Таймер 3 минуты
         self.guild = guild
         self.update_components()
 
@@ -246,11 +256,14 @@ class RoleShopView(discord.ui.View):
             self.add_item(select)
 
     async def select_callback(self, interaction: discord.Interaction):
+        # Сразу отвечаем Discord, чтобы убрать ошибку "Приложение не отвечает"
+        await interaction.response.defer(ephemeral=True)
+
         role_id = int(interaction.data["values"][0])
         role = interaction.guild.get_role(role_id)
         
         if not role:
-            await interaction.response.send_message("❌ Эта роль была удалена на сервере.", ephemeral=True)
+            await interaction.followup.send("❌ Эта роль была удалена на сервере.", ephemeral=True)
             return
 
         conn = sqlite3.connect('economy.db')
@@ -259,7 +272,7 @@ class RoleShopView(discord.ui.View):
         row = cursor.fetchone()
         if not row:
             conn.close()
-            await interaction.response.send_message("❌ Роль не найдена в магазине.", ephemeral=True)
+            await interaction.followup.send("❌ Роль не найдена в магазине.", ephemeral=True)
             return
         price = row[0]
 
@@ -269,7 +282,7 @@ class RoleShopView(discord.ui.View):
 
         if user_points < price:
             conn.close()
-            await interaction.response.send_message(f"❌ Недостаточно монет! У вас **{user_points}**, а нужно **{price}**.", ephemeral=True)
+            await interaction.followup.send(f"❌ Недостаточно монет! У вас **{user_points}**, а нужно **{price}**.", ephemeral=True)
             return
 
         # Списание средств
@@ -279,16 +292,16 @@ class RoleShopView(discord.ui.View):
 
         try:
             await interaction.user.add_roles(role)
-            await interaction.response.send_message(f"🎉 Вы успешно купили роль **{role.name}** за **{price}** монет!", ephemeral=True)
+            await interaction.followup.send(f"🎉 Вы успешно купили роль **{role.name}** за **{price}** монет!", ephemeral=True)
             
-            # Отправка лога о покупке в канал #📜︱логи
+            # Отправка лога о покупке в канал логов
             await send_log(
                 interaction.guild, 
                 f"🛒 **Покупка в магазине ролей**\n👤 Пользователь: {interaction.user.mention}\n🏷️ Роль: {role.name}\n💰 Цена: {price} монет"
             )
             
         except discord.Forbidden:
-            await interaction.response.send_message("❌ У бота нет прав на выдачу этой роли (проверьте иерархию ролей!).", ephemeral=True)
+            await interaction.followup.send("❌ У бота нет прав на выдачу этой роли (проверьте иерархию ролей!).", ephemeral=True)
 
 
 # --- Команда вызова магазина ---
