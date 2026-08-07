@@ -198,6 +198,10 @@ async def handle_specific_role_slash(interaction: discord.Interaction, member: d
 # ---------------------------------------------------------
 # 4. МАГАЗИН РОЛЕЙ (UI)
 # ---------------------------------------------------------
+  import sqlite3
+import discord
+from discord.ext import commands
+
 class RoleShopView(discord.ui.View):
     def __init__(self, guild: discord.Guild):
         super().__init__(timeout=None)
@@ -229,7 +233,7 @@ class RoleShopView(discord.ui.View):
                 )
 
         if options:
-            select = discord.Select(placeholder="Выберите роль для покупки...", options=options[:25])
+            select = discord.Select(placeholder="Выберите роль для покупки...", options=options[:25], custom_id="role_shop_select")
             select.callback = self.select_callback
             self.add_item(select)
 
@@ -260,15 +264,17 @@ class RoleShopView(discord.ui.View):
             await interaction.response.send_message(f"❌ Недостаточно монет! У вас **{user_points}**, а нужно **{price}**.", ephemeral=True)
             return
 
+        # Списание средств и сохранение
         cursor.execute('UPDATE users SET points = points - ? WHERE user_id = ?', (price, interaction.user.id))
         conn.commit()
-        conn.clбаллов
+        conn.close()  # <-- Исправлено здесь
+
         try:
             await interaction.user.add_roles(role)
             await interaction.response.send_message(f"🎉 Вы успешно купили роль **{role.name}** за **{price}** монет!", ephemeral=True)
         except discord.Forbidden:
             await interaction.response.send_message("❌ У бота нет прав на выдачу этой роли (проверьте иерархию ролей!).", ephemeral=True)
-
+            
 # ---------------------------------------------------------
 # 5. КОМАНДЫ ЭКОНОМИКИ, НАГРАД И МАГАЗИНА
 # ---------------------------------------------------------
