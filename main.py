@@ -198,25 +198,51 @@ async def handle_specific_role_slash(interaction: discord.Interaction, member: d
 # ---------------------------------------------------------
 # 4. МАГАЗИН РОЛЕЙ (UI)
 # ---------------------------------------------------------
-# --- Функция отправки логов ---
+import sqlite3
+import discord
+from discord.ext import commands
+
+# --- Инициализация таблицы настроек для логов при старте ---
+def init_db():
+    conn = sqlite3.connect('economy.db')
+    cursor = conn.cursor()
+    cursor.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value INTEGER)')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# --- Команда для установки канала логов ---
+@bot.command(name="setlog")
+@commands.has_permissions(administrator=True)
+async def setlog(ctx, channel: discord.TextChannel):
+    conn = sqlite3.connect('economy.db')
+    cursor = conn.cursor()
+    cursor.execute('REPLACE INTO settings (key, value) VALUES (?, ?)', ('log_channel_id', channel.id))
+    conn.commit()
+    conn.close()
+    await ctx.send(f"✅ Канал для логов успешно установлен: {channel.mention}")
+
+
+# --- Функция отправки логов через базу данных ---
 async def send_log(guild, message):
-    # Ищем канал с точным названием или по подстроке "логи"
-    log_channel = discord.utils.get(guild.text_channels, name="📜︱логи")
+    conn = sqlite3.connect('economy.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT value FROM settings WHERE key = ?', ('log_channel_id',))
+    row = cursor.fetchone()
+    conn.close()
     
-    if not log_channel:
-        for channel in guild.text_channels:
-            if "логи" in channel.name.lower():
-                log_channel = channel
-                break
-                
-    if log_channel:
-        try:
-            await log_channel.send(message)
-            print(f"Лог успешно отправлен в канал #{log_channel.name}")
-        except Exception as e:
-            print(f"❌ Ошибка отправки в канал логов: {e}")
+    if row:
+        log_channel = guild.get_channel(row[0])
+        if log_channel:
+            try:
+                await log_channel.send(message)
+            except Exception as e:
+                print(f"❌ Ошибка отправки в канал логов: {e}")
+        else:
+            print("❌ Сохраненный канал логов не найден на сервере!")
     else:
-        print(f"❌ Канал для логов ('📜︱логи') не найден на сервере {guild.name}!")
+        print("❌ Канал логов не настроен! Введите команду !setlog #канал")
 
 
 # --- Класс магазина ролей ---
@@ -256,7 +282,7 @@ class RoleShopView(discord.ui.View):
             self.add_item(select)
 
     async def select_callback(self, interaction: discord.Interaction):
-        # Сразу отвечаем Discord, чтобы убрать ошибку "Приложение не отвечает"
+        # Сразу отвечаем Discord, чтобы избежать ошибки "Приложение не отвечает"
         await interaction.response.defer(ephemeral=True)
 
         role_id = int(interaction.data["values"][0])
@@ -294,7 +320,7 @@ class RoleShopView(discord.ui.View):
             await interaction.user.add_roles(role)
             await interaction.followup.send(f"🎉 Вы успешно купили роль **{role.name}** за **{price}** монет!", ephemeral=True)
             
-            # Отправка лога о покупке в канал логов
+            # Отправка лога о покупке
             await send_log(
                 interaction.guild, 
                 f"🛒 **Покупка в магазине ролей**\n👤 Пользователь: {interaction.user.mention}\n🏷️ Роль: {role.name}\n💰 Цена: {price} монет"
