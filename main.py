@@ -195,22 +195,43 @@ async def handle_specific_role_slash(interaction: discord.Interaction, member: d
     except discord.Forbidden:
         await interaction.response.send_message("❌ У бота недостаточно прав (передвиньте роль бота выше в списке ролей сервера).", ephemeral=True)
 
-# ---------------------------------------------------------
-# 4. МАГАЗИН РОЛЕЙ (UI)
-# ---------------------------------------------------------
+# ---------------------------------------------------------#
+# 4. МАГАЗИН РОЛЕЙ (UI)                                    #
+# ---------------------------------------------------------#
 import sqlite3
 import discord
 from discord.ext import commands
+from discord import app_commands
+
+# --- Инициализация бота (замените под ваш восток/интенент, если нужно) ---
+intents = discord.Intents.default()
+intents.guilds = True
+intents.members = True
+intents.message_content = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- Инициализация базы данных ---
 def init_db():
     conn = sqlite3.connect('economy.db')
     cursor = conn.cursor()
     cursor.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value INTEGER)')
+    cursor.execute('CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, points INTEGER)')
+    cursor.execute('CREATE TABLE IF NOT EXISTS shop_roles (role_id INTEGER PRIMARY KEY, price INTEGER)')
     conn.commit()
     conn.close()
 
 init_db()
+
+@bot.event
+async def on_ready():
+    try:
+        synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} slash commands.")
+    except Exception as e:
+        print(e)
+    print(f"Logged in as {bot.user}")
+
 
 # --- Слеш-команда установки логов ---
 @bot.tree.command(name="setlog", description="Установить канал для логов")
@@ -244,7 +265,7 @@ async def send_log(guild, message):
                 print(f"❌ Ошибка отправки лога: {e}")
 
 
-# --- Класс самого меню выбора (Исправленный Select) ---
+# --- Класс меню выбора (исправленный) ---
 class RoleSelect(discord.ui.Select):
     def __init__(self, options):
         super().__init__(placeholder="Выберите роль для покупки...", options=options, custom_id="role_shop_select")
@@ -340,7 +361,10 @@ async def shop(interaction: discord.Interaction):
         color=discord.Color.blue()
     )
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-    
+
+# Замените 'YOUR_TOKEN' на токен вашего бота или используйте переменные окружения (os.getenv)
+# bot.run("YOUR_TOKEN")
+
 # ---------------------------------------------------------
 # 5. КОМАНДЫ ЭКОНОМИКИ, НАГРАД И МАГАЗИНА
 # ---------------------------------------------------------
