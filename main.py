@@ -300,9 +300,9 @@ async def reward_command(interaction: discord.Interaction):
     new_balance = cursor.fetchone()[0]
     conn.close()
 
-    await interaction.response.send_message(f"🎁 Вы успешно получили ежедневную награду — **100 баллов**!\n💎 Ваш текущий баланс: **{new_balance}** баллов.")
+    await interaction.response.send_message(f"🎁 Вы успешно получили ежедневную награду — **100 монет**!\n💎 Ваш текущий баланс: **{new_balance}** монет.")
 
-@bot.tree.command(name="bal", description="Проверить свой баланс баллов")
+@bot.tree.command(name="bal", description="Проверить свой баланс монет")
 @app_commands.describe(member="Участник (необязательно)")
 async def bal_command(interaction: discord.Interaction, member: discord.Member = None):
     target = member or interaction.user
@@ -312,7 +312,7 @@ async def bal_command(interaction: discord.Interaction, member: discord.Member =
     row = cursor.fetchone()
     points = row[0] if row else 0
     conn.close()
-    await interaction.response.send_message(f"💎 У пользователя **{target.display_name}** баланс: **{points} баллов**.")
+    await interaction.response.send_message(f"💎 У пользователя **{target.display_name}** баланс: **{points} монет**.")
 
 @bot.tree.command(name="shop", description="Открыть магазин ролей")
 async def shop_command(interaction: discord.Interaction):
@@ -320,7 +320,7 @@ async def shop_command(interaction: discord.Interaction):
     if not view.children:
         await interaction.response.send_message("🛒 Магазин ролей пока пуст! Администратор может добавить роли через текстовую команду `!addshop`.", ephemeral=True)
     else:
-        await interaction.response.send_message("🛒 **Магазин ролей сервера**\nВыберите нужную роль в меню ниже, чтобы приобрести её за баллы:", view=view, ephemeral=True)
+        await interaction.response.send_message("🛒 **Магазин ролей сервера**\nВыберите нужную роль в меню ниже, чтобы приобрести её за монеты:", view=view, ephemeral=True)
 
 @bot.command(name='addshop')
 @commands.has_permissions(administrator=True)
@@ -330,7 +330,7 @@ async def add_shop_role(ctx, role: discord.Role, price: int):
     cursor.execute('INSERT OR REPLACE INTO shop_roles (role_id, price) VALUES (?, ?)', (role.id, price))
     conn.commit()
     conn.close()
-    await ctx.send(f'🛒 Роль {role.mention} добавлена в магазин за **{price}** баллов.')
+    await ctx.send(f'🛒 Роль {role.mention} добавлена в магазин за **{price}** монет.')
 
 @bot.command(name='addpoints')
 @commands.has_permissions(administrator=True)
@@ -343,7 +343,7 @@ async def add_points(ctx, member: discord.Member, amount: int):
     cursor.execute('SELECT points FROM users WHERE user_id = ?', (member.id,))
     new_balance = cursor.fetchone()[0]
     conn.close()
-    await ctx.send(f'✅ Администратор выдал {amount} баллов пользователю {member.mention}. Новый баланс: **{new_balance}**.')
+    await ctx.send(f'✅ Администратор выдал {amount} монет пользователю {member.mention}. Новый баланс: **{new_balance}**.')
     # Отправляем сообщение вместе с вашим выпадающим списком (RoomSettingsView)
     await ctx.send(embed=embed, view=RoomSettingsView())
     try:
