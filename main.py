@@ -198,11 +198,11 @@ async def handle_specific_role_slash(interaction: discord.Interaction, member: d
 # ---------------------------------------------------------
 # 4. МАГАЗИН РОЛЕЙ (UI)
 # ---------------------------------------------------------
-  import sqlite3
+import sqlite3
 import discord
 from discord.ext import commands
 
-# --- Инициализация таблицы настроек для логов при старте ---
+# --- Инициализация базы данных ---
 def init_db():
     conn = sqlite3.connect('economy.db')
     cursor = conn.cursor()
@@ -212,10 +212,13 @@ def init_db():
 
 init_db()
 
-# --- Слеш-команда для установки канала логов ---
-@bot.tree.command(name="setlog", description="Установить канал для отправки логов бота")
-@app_commands.checks.has_permissions(administrator=True)
+# --- Слеш-команда установки логов ---
+@bot.tree.command(name="setlog", description="Установить канал для логов")
 async def setlog(interaction: discord.Interaction, channel: discord.TextChannel):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ У вас нет прав администратора!", ephemeral=True)
+        return
+        
     conn = sqlite3.connect('economy.db')
     cursor = conn.cursor()
     cursor.execute('REPLACE INTO settings (key, value) VALUES (?, ?)', ('log_channel_id', channel.id))
@@ -224,7 +227,7 @@ async def setlog(interaction: discord.Interaction, channel: discord.TextChannel)
     await interaction.response.send_message(f"✅ Канал для логов успешно установлен: {channel.mention}", ephemeral=True)
 
 
-# --- Функция отправки логов через базу данных ---
+# --- Функция отправки логов ---
 async def send_log(guild, message):
     conn = sqlite3.connect('economy.db')
     cursor = conn.cursor()
@@ -238,55 +241,18 @@ async def send_log(guild, message):
             try:
                 await log_channel.send(message)
             except Exception as e:
-                print(f"❌ Ошибка отправки в канал логов: {e}")
-        else:
-            print("❌ Сохраненный канал логов не найден на сервере!")
-    else:
-        print("❌ Канал логов не настроен! Введите команду /setlog")
+                print(f"❌ Ошибка отправки лога: {e}")
 
 
-# --- Класс магазина ролей ---
-class RoleShopView(discord.ui.View):
-    def __init__(self, guild: discord.Guild):
-        super().__init__(timeout=180)  # Таймер 3 минуты
-        self.guild = guild
-        self.update_components()
+# --- Класс самого меню выбора (Исправленный Select) ---
+class RoleSelect(discord.ui.Select):
+    def __init__(self, options):
+        super().__init__(placeholder="Выберите роль для покупки...", options=options, custom_id="role_shop_select")
 
-    def update_components(self):
-        self.clear_items()
-        conn = sqlite3.connect('economy.db')
-        cursor = conn.cursor()
-        cursor.execute('SELECT role_id, price FROM shop_roles')
-        items = cursor.fetchall()
-        conn.close()
-
-        if not items:
-            return
-
-        options = []
-        for role_id, price in items:
-            role = self.guild.get_role(role_id)
-            if role:
-                options.append(
-                    discord.SelectOption(
-                        label=role.name,
-                        value=str(role_id),
-                        description=f"Стоимость: {price} монет",
-                        emoji="🏷️"
-                    )
-                )
-
-        if options:
-            # ИСПРАВЛЕНО: discord.ui.Select вместо discord.Select
-            select = discord.ui.Select(placeholder="Выберите роль для покупки...", options=options[:25], custom_id="role_shop_select")
-            select.callback = self.select_callback
-            self.add_item(select)
-
-    async def select_callback(self, interaction: discord.Interaction):
-        # Сразу отвечаем Discord, чтобы избежать ошибки "Приложение не отвечает"
+    async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
-        role_id = int(interaction.data["values"][0])
+        role_id = int(self.values[0])
         role = interaction.guild.get_role(role_id)
         
         if not role:
@@ -312,7 +278,6 @@ class RoleShopView(discord.ui.View):
             await interaction.followup.send(f"❌ Недостаточно монет! У вас **{user_points}**, а нужно **{price}**.", ephemeral=True)
             return
 
-        # Списание средств
         cursor.execute('UPDATE users SET points = points - ? WHERE user_id = ?', (price, interaction.user.id))
         conn.commit()
         conn.close()
@@ -321,14 +286,44 @@ class RoleShopView(discord.ui.View):
             await interaction.user.add_roles(role)
             await interaction.followup.send(f"🎉 Вы успешно купили роль **{role.name}** за **{price}** монет!", ephemeral=True)
             
-            # Отправка лога о покупке
             await send_log(
                 interaction.guild, 
                 f"🛒 **Покупка в магазине ролей**\n👤 Пользователь: {interaction.user.mention}\n🏷️ Роль: {role.name}\n💰 Цена: {price} монет"
             )
-            
         except discord.Forbidden:
             await interaction.followup.send("❌ У бота нет прав на выдачу этой роли (проверьте иерархию ролей!).", ephemeral=True)
+
+
+# --- Представление магазина ---
+class RoleShopView(discord.ui.View):
+    def __init__(self, guild: discord.Guild):
+        super().__init__(timeout=180)
+        self.guild = guild
+        
+        conn = sqlite3.connect('economy.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT role_id, price FROM shop_roles')
+        items = cursor.fetchall()
+        conn.close()
+
+        if not items:
+            return
+
+        options = []
+        for role_id, price in items:
+            role = self.guild.get_role(role_id)
+            if role:
+                options.append(
+                    discord.SelectOption(
+                        label=role.name,
+                        value=str(role_id),
+                        description=f"Стоимость: {price} монет",
+                        emoji="🏷️"
+                    )
+                )
+
+        if options:
+            self.add_item(RoleSelect(options[:25]))
 
 
 # --- Команда вызова магазина ---
@@ -345,7 +340,7 @@ async def shop(interaction: discord.Interaction):
         color=discord.Color.blue()
     )
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-        
+    
 # ---------------------------------------------------------
 # 5. КОМАНДЫ ЭКОНОМИКИ, НАГРАД И МАГАЗИНА
 # ---------------------------------------------------------
