@@ -198,13 +198,21 @@ async def handle_specific_role_slash(interaction: discord.Interaction, member: d
 # ---------------------------------------------------------
 # 4. МАГАЗИН РОЛЕЙ (UI)
 # ---------------------------------------------------------
-  import sqlite3
-import discord
-from discord.ext import commands
+# --- Функция отправки логов ---
+async def send_log(guild, message):
+    # Ищем канал с точным названием "📜︱логи"
+    log_channel = discord.utils.get(guild.text_channels, name="📜︱логи")
+    if log_channel:
+        try:
+            await log_channel.send(message)
+        except Exception as e:
+            print(f"Не удалось отправить лог: {e}")
 
+
+# --- Обновленный класс магазина ролей с логами и таймаутом ---
 class RoleShopView(discord.ui.View):
     def __init__(self, guild: discord.Guild):
-        super().__init__(timeout=None)
+        super().__init__(timeout=180)  # Изменили на таймер 3 минуты, чтобы избежать ошибки "Приложение не отвечает"
         self.guild = guild
         self.update_components()
 
@@ -264,17 +272,40 @@ class RoleShopView(discord.ui.View):
             await interaction.response.send_message(f"❌ Недостаточно монет! У вас **{user_points}**, а нужно **{price}**.", ephemeral=True)
             return
 
-        # Списание средств и сохранение
+        # Списание средств
         cursor.execute('UPDATE users SET points = points - ? WHERE user_id = ?', (price, interaction.user.id))
         conn.commit()
-        conn.close()  # <-- Исправлено здесь
+        conn.close()
 
         try:
             await interaction.user.add_roles(role)
             await interaction.response.send_message(f"🎉 Вы успешно купили роль **{role.name}** за **{price}** монет!", ephemeral=True)
+            
+            # Отправка лога о покупке в канал #📜︱логи
+            await send_log(
+                interaction.guild, 
+                f"🛒 **Покупка в магазине ролей**\n👤 Пользователь: {interaction.user.mention}\n🏷️ Роль: {role.name}\n💰 Цена: {price} монет"
+            )
+            
         except discord.Forbidden:
             await interaction.response.send_message("❌ У бота нет прав на выдачу этой роли (проверьте иерархию ролей!).", ephemeral=True)
-            
+
+
+# --- Команда вызова магазина ---
+@bot.tree.command(name="shop", description="Открыть магазин ролей")
+async def shop(interaction: discord.Interaction):
+    view = RoleShopView(interaction.guild)
+    if not view.children:
+        await interaction.response.send_message("🛒 В магазине пока нет доступных ролей.", ephemeral=True)
+        return
+        
+    embed = discord.Embed(
+        title="🛒 Магазин ролей",
+        description="Выберите роль в меню ниже, чтобы приобрести её за монеты.",
+        color=discord.Color.blue()
+    )
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+    
 # ---------------------------------------------------------
 # 5. КОМАНДЫ ЭКОНОМИКИ, НАГРАД И МАГАЗИНА
 # ---------------------------------------------------------
