@@ -223,7 +223,7 @@ class RoleShopView(discord.ui.View):
                     discord.SelectOption(
                         label=role.name,
                         value=str(role_id),
-                        description=f"Стоимость: {price} баллов",
+                        description=f"Стоимость: {price} монет",
                         emoji="🏷️"
                     )
                 )
@@ -257,16 +257,15 @@ class RoleShopView(discord.ui.View):
 
         if user_points < price:
             conn.close()
-            await interaction.response.send_message(f"❌ Недостаточно баллов! У вас **{user_points}**, а нужно **{price}**.", ephemeral=True)
+            await interaction.response.send_message(f"❌ Недостаточно монет! У вас **{user_points}**, а нужно **{price}**.", ephemeral=True)
             return
 
         cursor.execute('UPDATE users SET points = points - ? WHERE user_id = ?', (price, interaction.user.id))
         conn.commit()
-        conn.close()
-
+        conn.clбаллов
         try:
             await interaction.user.add_roles(role)
-            await interaction.response.send_message(f"🎉 Вы успешно купили роль **{role.name}** за **{price}** баллов!", ephemeral=True)
+            await interaction.response.send_message(f"🎉 Вы успешно купили роль **{role.name}** за **{price}** монет!", ephemeral=True)
         except discord.Forbidden:
             await interaction.response.send_message("❌ У бота нет прав на выдачу этой роли (проверьте иерархию ролей!).", ephemeral=True)
 
