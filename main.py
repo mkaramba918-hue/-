@@ -198,18 +198,20 @@ async def handle_specific_role_slash(interaction: discord.Interaction, member: d
 # ---------------------------------------------------------#
 # 4. МАГАЗИН РОЛЕЙ (UI)                                    #
 # ---------------------------------------------------------#
-import sqlite3
+        import sqlite3
 import discord
 from discord.ext import commands
 from discord import app_commands
 
-# --- Инициализация бота (замените под ваш восток/интенент, если нужно) ---
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+# ID вашего сервера для мгновенной синхронизации команд
+GUILD_ID = 890471319815192597
 
 # --- Инициализация базы данных ---
 def init_db():
@@ -225,12 +227,14 @@ init_db()
 
 @bot.event
 async def on_ready():
-    try:
-        synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} slash commands.")
-    except Exception as e:
-        print(e)
     print(f"Logged in as {bot.user}")
+    try:
+        guild = discord.Object(id=GUILD_ID)
+        bot.tree.copy_global_to(guild=guild)
+        synced = await bot.tree.sync(guild=guild)
+        print(f"Synced {len(synced)} commands to guild.")
+    except Exception as e:
+        print(f"Ошибка синхронизации: {e}")
 
 
 # --- Слеш-команда установки логов ---
@@ -265,7 +269,7 @@ async def send_log(guild, message):
                 print(f"❌ Ошибка отправки лога: {e}")
 
 
-# --- Класс меню выбора (исправленный) ---
+# --- Класс меню выбора ---
 class RoleSelect(discord.ui.Select):
     def __init__(self, options):
         super().__init__(placeholder="Выберите роль для покупки...", options=options, custom_id="role_shop_select")
@@ -361,10 +365,7 @@ async def shop(interaction: discord.Interaction):
         color=discord.Color.blue()
     )
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-# Замените 'YOUR_TOKEN' на токен вашего бота или используйте переменные окружения (os.getenv)
-# bot.run("YOUR_TOKEN")
-
+    
 # ---------------------------------------------------------
 # 5. КОМАНДЫ ЭКОНОМИКИ, НАГРАД И МАГАЗИНА
 # ---------------------------------------------------------
