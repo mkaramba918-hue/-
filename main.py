@@ -351,14 +351,6 @@ async def bal_command(interaction: discord.Interaction, member: discord.Member =
     conn.close()
     await interaction.response.send_message(f"💎 У пользователя **{target.display_name}** баланс: **{points} монет**.")
 
-@bot.tree.command(name="shop", description="Открыть магазин ролей")
-async def shop_command(interaction: discord.Interaction):
-    view = RoleShopView(interaction.guild)
-    if not view.children:
-        await interaction.response.send_message("🛒 Магазин ролей пока пуст! Администратор может добавить роли через текстовую команду `!addshop`.", ephemeral=True)
-    else:
-        await interaction.response.send_message("🛒 **Магазин ролей сервера**\nВыберите нужную роль в меню ниже, чтобы приобрести её за монеты:", view=view, ephemeral=True)
-
 @bot.command(name='addshop')
 @commands.has_permissions(administrator=True)
 async def add_shop_role(ctx, role: discord.Role, price: int):
