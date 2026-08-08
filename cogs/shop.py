@@ -15,7 +15,7 @@ cursor.execute("""
     CREATE TABLE IF NOT EXISTS shop_roles (
         role_id INTEGER PRIMARY KEY,
         price INTEGER DEFAULT 0,
-        owner_id INTEGER INTEGER DEFAULT 0,
+        owner_id INTEGER DEFAULT 0,
         purchases INTEGER DEFAULT 0
     )
 """)
@@ -37,11 +37,14 @@ class RoleBuyButton(discord.ui.Button):
     self.price = price
 
   async def callback(self, interaction: discord.Interaction):
+    # Сразу защищаем взаимодействие от таймаута
+    await interaction.response.defer(ephemeral=True)
+
     guild = interaction.guild
     role = guild.get_role(self.role_id)
 
     if not role:
-      await interaction.response.send_message(
+      await interaction.followup.send(
           "❌ Эта роль больше не существует на сервере.", ephemeral=True
       )
       return
@@ -49,7 +52,7 @@ class RoleBuyButton(discord.ui.Button):
     conn = sqlite3.connect("economy.db")
     cursor = conn.cursor()
 
-    # Запрашиваем points вместо balance
+    # Проверяем баланс пользователя
     cursor.execute(
         "SELECT points FROM users WHERE user_id = ?", (interaction.user.id,)
     )
@@ -58,14 +61,13 @@ class RoleBuyButton(discord.ui.Button):
 
     if user_balance < self.price:
       conn.close()
-      await interaction.response.send_message(
-          f"❌ У вас недостаточно средств! Нужно: {self.price} монет, а у вас:"
-          f" {user_balance} монет.",
+      await interaction.followup.send(
+          f"❌ У вас недостаточно средств! Нужно: {self.price} монет, а у вас: {user_balance} монет.",
           ephemeral=True,
       )
       return
 
-    # Списываем points
+    # Списываем points и обновляем счетчик покупок
     cursor.execute(
         "UPDATE users SET points = points - ? WHERE user_id = ?",
         (self.price, interaction.user.id),
@@ -77,14 +79,15 @@ class RoleBuyButton(discord.ui.Button):
     conn.commit()
     conn.close()
 
+    # Выдаем роль и отправляем итоговое сообщение через followup
     try:
       await interaction.user.add_roles(role)
-      await interaction.response.send_message(
+      await interaction.followup.send(
           f"✅ Вы успешно купили роль {role.mention} за {self.price} монет!",
           ephemeral=True,
       )
     except discord.Forbidden:
-      await interaction.response.send_message(
+      await interaction.followup.send(
           "❌ У бота нет прав на выдачу этой роли (проверьте иерархию ролей).",
           ephemeral=True,
       )
