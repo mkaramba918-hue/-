@@ -1,4 +1,4 @@
-import os
+importt os
 
 DISCORD_TOKEN = (
     os.getenv("DISCORD_TOKEN")
@@ -7,7 +7,7 @@ DISCORD_TOKEN = (
 )
 print(f"DEBUG TOKEN: {DISCORD_TOKEN}")
 
-import importt
+import import
 import datetime
 import sqlite3
 import discord
