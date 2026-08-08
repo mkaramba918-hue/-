@@ -1,7 +1,7 @@
 import os
 
 DISCORD_TOKEN = (
-    os.getenv("DISCORD_TOKEN")
+    os.getenv("MTUzNDc0MDUwMzMwMjYzNTcxMw.Gemnao.YfmlclnFFxOP7zZ3_dvTh_m_k-mIJIpv6HB4rs")
     or os.getenv("TOKEN")
     or os.getenv("BOT_TOKEN")
 )
