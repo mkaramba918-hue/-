@@ -21,9 +21,6 @@ from flask import Flask
 # Импортируем функционал приваток из privates.py
 from privates import CreateRoomButtonView, on_voice_state_update
 
-await bot.load_extension("cogs.console_logger")
-
-
 # ---------------------------------------------------------
 # 0. ВЕБ-СЕРВЕР ДЛЯ ПРЕДОТВРАЩЕНИЯ ОТКЛЮЧЕНИЯ НА RENDER
 # ---------------------------------------------------------
@@ -207,18 +204,16 @@ async def handle_specific_role_slash(interaction: discord.Interaction, member: d
     except discord.Forbidden:
         await interaction.response.send_message("❌ У бота недостаточно прав (передвиньте роль бота выше в списке ролей сервера).", ephemeral=True)
 
+  # Сначала загружаем все коги (включая shop и console_logger)
 @bot.event
 async def on_ready():
-  # Сначала загружаем все коги (включая shop и console_logger)
-  await bot.load_extension("cogs.shop")
+    await bot.load_extension("cogs.shop")
   await bot.load_extension("cogs.console_logger")
 
   # Затем синхронизируем дерево команд с Discord
   await bot.tree.sync()
   print(f"Бот запущен! Synced {len(bot.tree.get_commands())} slash commands.")
     
-@bot.event
-async def on_ready():
   print(f"Logged in as {bot.user}")
   await load_extensions()
   try:
