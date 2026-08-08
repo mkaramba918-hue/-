@@ -1,9 +1,9 @@
 import os
 import discord
-from discord.ext import commands
+from discord.ext 
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-import discord
+
 from discord.ext 
 import asyncio
 import commands
@@ -11,15 +11,15 @@ import sys
 import datetime
 import sqlite3
 import discord
-from discord.ext import commands
-from discord import app_commands
+from discord.ext 
+from discord 
 import yt_dlp
-from threading import Thread
-from flask import Flask
-
+from threading 
+from flask 
+import app_commands
 # Импортируем функционал приваток из privates.py
 from privates import CreateRoomButtonView, on_voice_state_update
-
+import Thread
 # ---------------------------------------------------------
 # 0. ВЕБ-СЕРВЕР ДЛЯ ПРЕДОТВРАЩЕНИЯ ОТКЛЮЧЕНИЯ НА RENDER
 # ---------------------------------------------------------
