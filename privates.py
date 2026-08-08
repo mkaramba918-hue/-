@@ -50,7 +50,7 @@ class CreateRoomButtonView(discord.ui.View):
     async def create_room_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(CreateRoomModal())
 
-# 3. Выпадающее меню управления комнатой (соответствует вашему скриншоту настроек)
+# 3. Выпадающее меню управления комнатой
 class RoomSettingsSelect(discord.ui.Select):
     def __init__(self):
         options = [
@@ -91,7 +91,8 @@ class RoomSettingsSelect(discord.ui.Select):
             await channel.set_permissions(interaction.guild.default_role, connect=True)
             await interaction.response.send_message("🔓 Комната открыта для всех.", ephemeral=True)
         elif val == "delete":
-            del active_private_channels[channel_id]
+            if channel_id in active_private_channels:
+                del active_private_channels[channel_id]
             await channel.delete()
             await interaction.response.send_message("❌ Комната удалена.", ephemeral=True)
         else:
@@ -103,20 +104,38 @@ class RoomSettingsView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(RoomSettingsSelect())
 
-# 5. Команда для развертывания панели настроек в канале `📋︱настройка-комнаты`
-@commands.has_permissions(administrator=True)
-@commands.command(name="setup_settings_panel")
-async def setup_settings_panel(ctx):
-    embed = discord.Embed(
-        title="Настройка приватной комнаты",
-        description="Вы можете **настроить** созданную **приватную комнату** в соответствии с доступным функционалом. Чтобы это сделать **воспользуйтесь меню** под сообщением.",
-        color=discord.Color.dark_theme()
-    )
-    await ctx.send(embed=embed, view=RoomSettingsView())
-    try:
-        await ctx.message.delete()
-    except:
-        pass
+# 5. Команда для развертывания панели настроек
+class PrivatesCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
 
-# 6. Автоматическое удаление пустых приваток
+    @commands.has_permissions(administrator=True)
+    @commands.command(name="setup_settings_panel")
+    async def setup_settings_panel(self, ctx):
+        embed = discord.Embed(
+            title="Настройка приватной комнаты",
+            description="Вы можете **настроить** созданную **приватную комнату** в соответствии с доступным функционалом. Чтобы это сделать **воспользуйтесь меню** под сообщением.",
+            color=discord.Color.dark_theme()
+        )
+        await ctx.send(embed=embed, view=RoomSettingsView())
+        try:
+            await ctx.message.delete()
+        except:
+            pass
 
+# 6. Событие автоматического удаления пустых комнат при выходе
+async def on_voice_state_update(member, before, after):
+    if before.channel and before.channel.id in active_private_channels:
+        if len(before.channel.members) == 0:
+            channel_id = before.channel.id
+            try:
+                if channel_id in active_private_channels:
+                    del active_private_channels[channel_id]
+                await before.channel.delete()
+            except Exception as e:
+                print(f"Ошибка при удалении пустой приватки: {e}")
+
+async def setup(bot):
+    await bot.add_cog(PrivatesCog(bot))
+    bot.add_listener(on_voice_state_update, "on_voice_state_update")
+        
