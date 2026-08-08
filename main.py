@@ -16,19 +16,23 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
  #---------------------------------------------------------
 # 0. ВЕБ-СЕРВЕР ДЛЯ ПРЕДОТВРАЩЕНИЯ ОТКЛЮЧЕНИЯ НА RENDER
 # ---------------------------------------------------------
-app = Flask("")
+ app = Flask("")
+
 
 @app.route("/")
 def home():
-    return "Bot is alive and running 24/7!"
+  return "Bot is alive and running 24/7!"
+
 
 def run_web():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+  port = int(os.environ.get("PORT", 8080))
+  app.run(host="0.0.0.0", port=port)
+
 
 def keep_alive():
-    t = Thread(target=run_web)
-    t.start()
+  t = Thread(target=run_web)
+  t.start()
+
 
 LOG_BUFFER = []
 MAX_BUFFER_SIZE = 25
@@ -40,7 +44,8 @@ intents.members = True
 intents.voice_states = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# 2. ПОТОМ ИДЕТ КЛАСС ПЕРЕХВАТЧИКА:
+
+# 2. ПОТОМ ИДЕТ БЕЗОПАСНЫЙ КЛАСС ПЕРЕХВАТЧИКА:
 class OutputInterceptor:
 
   def __init__(self, bot):
@@ -57,7 +62,12 @@ class OutputInterceptor:
       LOG_BUFFER.append(cleaned)
       if len(LOG_BUFFER) > MAX_BUFFER_SIZE:
         LOG_BUFFER.pop(0)
-      self.bot.loop.create_task(self.send_log_to_discord(cleaned))
+
+      # Безопасно отправляем задачу в цикл бота из любого потока
+      if self.bot.loop and self.bot.loop.is_running():
+        asyncio.run_coroutine_threadsafe(
+            self.send_log_to_discord(cleaned), self.bot.loop
+        )
 
   def flush(self):
     self.original_stdout.flush()
@@ -80,11 +90,13 @@ class OutputInterceptor:
     except Exception:
       pass
 
+
 # 3. И ТОЛЬКО ПОСЛЕ ЭТОГО ВКЛЮЧАЕМ ПЕРЕХВАТ:
 if not isinstance(sys.stdout, OutputInterceptor):
   interceptor = OutputInterceptor(bot)
   sys.stdout = interceptor
   sys.stderr = interceptor
+ 
  
 # ---------------------------------------------------------
 # 1. БАЗА ДАННЫХ (ЭКОНОМИКА, ЕЖЕДНЕВНЫЕ НАГРАДЫ И МАГАЗИН)
