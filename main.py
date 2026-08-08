@@ -20,42 +20,43 @@ class DiscordLogHandler(logging.Handler):
         super().__init__()
         self.bot = bot
         self.channel_id = channel_id
-        
-  def emit(self, record):
-    log_entry = self.format(record)
-    self.bot.loop.create_task(self.send_log(log_entry))
 
-  async def send_log(self, message: str):
-    await self.bot.wait_until_ready()
-    channel = self.bot.get_channel(self.channel_id)
-    if channel:
-      try:
-          if len(message) > 1900:
-          message = message[:1900] + "..."
-          await channel.send(f"```ini\n{message}\n```")
-          except Exception as e:
-        print(f"Ошибка отправки лога: {e}")
+    def emit(self, record):
+        log_entry = self.format(record)
+        self.bot.loop.create_task(self.send_log(log_entry))
+
+    async def send_log(self, message: str):
+        await self.bot.wait_until_ready()
+        channel = self.bot.get_channel(self.channel_id)
+        if channel:
+            try:
+                if len(message) > 1900:
+                    message = message[:1900] + "..."
+                await channel.send(f"```ini\n{message}\n```")
+            except Exception as e:
+                print(f"Ошибка отправки лога: {e}")
 
 app = Flask("")
 
 
 @app.route("/")
 def home():
-  return "Bot is alive and running 24/7!"
+    return "Bot is alive and running 24/7!"
 
 
 def run_web():
-  port = int(os.environ.get("PORT", 8080))
-  app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
 
 
 def keep_alive():
-  t = Thread(target=run_web)
-  t.start()
+    t = Thread(target=run_web)
+    t.start()
 
 
 LOG_BUFFER = []
 MAX_BUFFER_SIZE = 25
+
 
 # 1. СНАЧАЛА СОЗДАЕМ БОТА:
 intents = discord.Intents.default()
