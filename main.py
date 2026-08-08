@@ -389,6 +389,7 @@ async def add_points(ctx, member: discord.Member, amount: int):
         pass
 
 #логииииииии#
+# --- ЛОГИ ---#
 @bot.tree.command(
     name="getlogs", description="Получить последние логи и привязать этот канал"
 )
@@ -424,6 +425,7 @@ async def getlogs_slash(interaction: discord.Interaction):
       "✅ Готово! Логи отправлены в чат, а канал привязан для будущих ошибок.",
       ephemeral=True,
   )
+    
     
 # ---------------------------------------------------------
 # 6. СЛЭШ-КОМАНДЫ ДОЛЖНОСТЕЙ И МОДЕРАЦИИ
