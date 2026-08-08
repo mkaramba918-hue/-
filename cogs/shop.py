@@ -24,18 +24,18 @@ class RoleSelect(discord.ui.Select):
       )
       return
 
-    # Проверка и списание валюты из базы данных, выдача роли
+    # Подключаемся к базе данных для проверки баланса и покупки
     conn = sqlite3.connect("economy.db")
     cursor = conn.cursor()
 
-    # Проверяем баланс пользователя (предполагаем таблицу users с полями user_id и balance)
+    # Проверяем баланс пользователя
     cursor.execute(
         "SELECT balance FROM users WHERE user_id = ?", (interaction.user.id,)
     )
     user_row = cursor.fetchone()
     user_balance = user_row[0] if user_row else 0
 
-    # Проверяем цену роли (предполагаем таблицу shop_roles с полями role_id и price)
+    # Проверяем цену роли
     cursor.execute(
         "SELECT price FROM shop_roles WHERE role_id = ?", (role_id,)
     )
@@ -59,7 +59,7 @@ class RoleSelect(discord.ui.Select):
       )
       return
 
-    # Списываем баланс и выдаем роль
+    # Списываем баланс
     cursor.execute(
         "UPDATE users SET balance = balance - ? WHERE user_id = ?",
         (price, interaction.user.id),
@@ -94,7 +94,6 @@ class RoleShopView(discord.ui.View):
 
     options = []
     for role_id, price in roles_data:
-      # Добавляем каждую роль в селект-меню (название можно подтягивать или ставить дефолтное)
       options.append(
           discord.SelectOption(
               label=f"Роль ID: {role_id}",
@@ -117,6 +116,35 @@ class Shop(commands.Cog):
 
   def __init__(self, bot):
     self.bot = bot
+    self.init_db()
+
+  def init_db(self):
+    # Автоматически создаем таблицы и нужные колонки при загрузке кога
+    conn = sqlite3.connect("economy.db")
+    cursor = conn.cursor()
+
+    cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                balance INTEGER DEFAULT 0
+            )
+        """)
+
+    cursor.execute("""
+            CREATE TABLE IF NOT EXISTS shop_roles (
+                role_id INTEGER PRIMARY KEY,
+                price INTEGER DEFAULT 0
+            )
+        """)
+
+    # На всякий случай гарантируем наличие колонки balance
+    try:
+      cursor.execute("ALTER TABLE users ADD COLUMN balance INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+      pass
+
+    conn.commit()
+    conn.close()
 
   @discord.app_commands.command(
       name="shop", description="Открыть магазин ролей"
