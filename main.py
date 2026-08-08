@@ -8,11 +8,33 @@ from flask import Flask
 import discord
 from discord.ext import commands
 from discord import app_commands
-
+import logging
 # Импортируем функционал приваток из privates.py
 from privates import CreateRoomButtonView, on_voice_state_update
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+
+class DiscordLogHandler(logging.Handler):
+
+def __init__(self, bot, channel_id: int):
+    super().__init__()
+    self.bot = bot
+    self.channel_id = channel_id
+
+  def emit(self, record):
+    log_entry = self.format(record)
+    self.bot.loop.create_task(self.send_log(log_entry))
+
+  async def send_log(self, message: str):
+    await self.bot.wait_until_ready()
+    channel = self.bot.get_channel(self.channel_id)
+    if channel:
+      try:
+        if len(message) > 1900:
+          message = message[:1900] + "..."
+        await channel.send(f"```ini\n{message}\n```")
+        except Exception as e:
+        print(f"Ошибка отправки лога: {e}")
 
 app = Flask("")
 
@@ -171,6 +193,20 @@ async def on_ready():
 
 bot.add_listener(on_voice_state_update, 'on_voice_state_update')
 
+      # Инициализация отправки логов в канал
+  LOG_CHANNEL_ID = 1535375319517626448  # Ваш ID канала
+  if not any(
+      isinstance(h, DiscordLogHandler) for h in logging.getLogger().handlers
+  ):
+    handler = DiscordLogHandler(bot, LOG_CHANNEL_ID)
+    handler.setFormatter(
+        logging.Formatter(
+            "[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"
+        )
+    )
+    logging.getLogger().addHandler(handler)
+    logging.getLogger().setLevel(logging.INFO)
+    
 # ---------------------------------------------------------
 # Проверка прав на должности
 # ---------------------------------------------------------
@@ -215,52 +251,6 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Ошибка загрузки когов: {e}")
 
-import logging
-
-# ID вашего канала для логов в Discord
-LOG_CHANNEL_ID = 1535375319517626448  # Замените на реальный ID канала
-
-
-class DiscordLogHandler(logging.Handler):
-
-  def __init__(self, bot, channel_id: int):
-    super().__init__()
-    self.bot = bot
-    self.channel_id = channel_id
-
-  def emit(self, record):
-    log_entry = self.format(record)
-    self.bot.loop.create_task(self.send_log(log_entry))
-
-  async def send_log(self, message: str):
-    await self.bot.wait_until_ready()
-    channel = self.bot.get_channel(self.channel_id)
-    if channel:
-      try:
-        if len(message) > 1900:
-          message = message[:1900] + "..."
-        await channel.send(f"```ini\n{message}\n```")
-      except Exception as e:
-        print(f"Ошибка отправки лога: {e}")
-
-
-# Внутри вашего события on_ready() или при инициализации бота добавьте:
-@bot.event
-async def on_ready():
-  # Подключаем перехватчик логов к системе Python один раз
-  if not any(
-      isinstance(h, DiscordLogHandler) for h = logging.getLogger().handlers
-  ):
-    handler = DiscordLogHandler(bot, LOG_CHANNEL_ID)
-    handler.setFormatter(
-        logging.Formatter("[%(asctime)s] [%(levelname)s] %(name)s: %(message)s")
-    )
-    logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.INFO)
-
-  print(f"Бот {bot.user} успешно запущен и готов к работе!")
-  
-  
     # 2. Синхронизируем слэш-команды на ваш сервер
     try:
         guild = discord.Object(id=890471319815192597)
