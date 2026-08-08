@@ -1,13 +1,13 @@
 import os
 
 DISCORD_TOKEN = (
-    os.getenv("MTUzNDc0MDUwMzMwMjYzNTcxMw.Gemnao.YfmlclnFFxOP7zZ3_dvTh_m_k-mIJIpv6HB4rs")
+    os.getenv("DISCORD_TOKEN")
     or os.getenv("TOKEN")
     or os.getenv("BOT_TOKEN")
 )
-print(f"DEBUG TOKEN: {DISCORD_TOKEN}")  # Выведет токен или None в логи
+print(f"DEBUG TOKEN: {DISCORD_TOKEN}")
 
-import asyncio
+import importt
 import datetime
 import sqlite3
 import discord
