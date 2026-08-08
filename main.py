@@ -1173,7 +1173,7 @@ ytdl_format_options = {
     'default_search': 'auto',
     'source_address': '0.0.0.0',
     'extractor_args': {'soundcloud': {'fetch_page': 'mobile'}},
-    'spotify': {
+    'spotify': {}
 }
 
 ffmpeg_options = {
