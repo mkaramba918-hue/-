@@ -192,21 +192,20 @@ async def on_ready():
     print("--------------------------------------------------")
 
 bot.add_listener(on_voice_state_update, 'on_voice_state_update')
+    # Инициализация отправки логов в канал
+    LOG_CHANNEL_ID = 1535375319517626448
+    if not any(
+        isinstance(h, DiscordLogHandler) for h in logging.getLogger().handlers
+    ):
+      handler = DiscordLogHandler(bot, LOG_CHANNEL_ID)
+      handler.setFormatter(
+          logging.Formatter(
+              "[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"
+          )
+      )
+      logging.getLogger().addHandler(handler)
+      logging.getLogger().setLevel(logging.INFO)
 
-      # Инициализация отправки логов в канал
-  LOG_CHANNEL_ID = 1535375319517626448  # Ваш ID канала
-  if not any(
-      isinstance(h, DiscordLogHandler) for h in logging.getLogger().handlers
-  ):
-    handler = DiscordLogHandler(bot, LOG_CHANNEL_ID)
-    handler.setFormatter(
-        logging.Formatter(
-            "[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"
-        )
-    )
-    logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.INFO)
-    
 # ---------------------------------------------------------
 # Проверка прав на должности
 # ---------------------------------------------------------
