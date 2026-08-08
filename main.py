@@ -1157,7 +1157,87 @@ async def on_message(message):
             await log_channel.send(log_text)
 
     await bot.process_commands(message)
-    
+
+# Настройки для yt-dlp
+ytdl_format_options = {
+    'format': 'bestaudio/best',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
+    'noplaylist': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'auto',
+    'source_address': '0.0.0.0',
+}
+
+ffmpeg_options = {
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    'options': '-vn',
+}
+
+ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
+
+class YTDLSource(discord.PCMVolumeTransformer):
+    def __init__(self, source, *, data, volume=0.5):
+        super().__init__(source, volume)
+        self.data = data
+        self.title = data.get('title')
+        self.url = data.get('url')
+
+    @classmethod
+    async def create_source(cls, search: str, *, loop=None):
+        loop = loop or asyncio.get_running_loop()
+        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(search, download=False))
+        
+        if 'entries' in data:
+            data = data['entries'][0]
+
+        filename = data['url']
+        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+
+# Команда /play
+@bot.tree.command(name="play", description="Воспроизвести музыку с SoundCloud или по ссылке")
+async def play(interaction: discord.Interaction, query: str):
+    await interaction.response.defer()
+
+    if not interaction.user.voice:
+        return await interaction.followup.send("❌ Вы должны находиться в голосовом канале!")
+
+    channel = interaction.user.voice.channel
+
+    if interaction.guild.voice_client is None:
+        await channel.connect()
+    elif interaction.guild.voice_client.channel != channel:
+        await interaction.guild.voice_client.move_to(channel)
+
+    player = interaction.guild.voice_client
+
+    try:
+        async with interaction.channel.typing():
+            source = await YTDLSource.create_source(query, loop=bot.loop)
+            
+        if player.is_playing():
+            player.stop()
+
+        player.play(source, after=lambda e: print(f'Ошибка плеера: {e}') if e else None)
+        await interaction.followup.send(f"🎶 Сейчас играет: **{source.title}**")
+        
+    except Exception as e:
+        await interaction.followup.send(f"❌ Произошла ошибка при загрузке трека: `{e}`")
+
+# Команда /stop для остановки музыки
+@bot.tree.command(name="stop", description="Остановить музыку и выключить бота из канала")
+async def stop(interaction: discord.Interaction):
+    if interaction.guild.voice_client:
+        await interaction.guild.voice_client.disconnect()
+        await interaction.response.send_message("⏹️ Музыка остановлена, бот вышел из канала.")
+    else:
+        await interaction.response.send_message("❌ Бот не находится в голосовом канале.")
+        
+
 # --- Запуск бота ---
 
 if __name__ == "__main__":
