@@ -873,6 +873,8 @@ async def on_raw_message_delete(payload):
         f"🗑️ **Сообщение удалено (из кэша/очистки)**\n"
         f"• **Канал:** {channel_mention}\n"
         f"• **ID сообщения:** `{payload.message_id}`"
+   )
+
 
 @bot.event
 async def on_message_edit(before, after):
