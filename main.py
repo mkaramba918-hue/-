@@ -215,7 +215,11 @@ async def on_ready():
   except Exception as e:
     print(f"Ошибка синхронизации: {e}")
       
-await bot.load_extension("cogs.shop")
+@bot.event
+async def on_ready():
+  await bot.tree.sync()  # Принудительно синхронизирует все слэш-команды с серверами
+  print(f"Бот {bot.user} запущен и команды синхронизированы!")
+    
 
 # --------------------------------------------------------#
 # 5. КОМАНДЫ ЭКОНОМИКИ, НАГРАД И МАГАЗИНА                  #
