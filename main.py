@@ -30,10 +30,10 @@ def __init__(self, bot, channel_id: int):
     channel = self.bot.get_channel(self.channel_id)
     if channel:
       try:
-        if len(message) > 1900:
+          if len(message) > 1900:
           message = message[:1900] + "..."
-        await channel.send(f"```ini\n{message}\n```")
-        except Exception as e:
+          await channel.send(f"```ini\n{message}\n```")
+          except Exception as e:
         print(f"Ошибка отправки лога: {e}")
 
 app = Flask("")
