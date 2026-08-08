@@ -21,6 +21,9 @@ from flask import Flask
 # Импортируем функционал приваток из privates.py
 from privates import CreateRoomButtonView, on_voice_state_update
 
+await bot.load_extension("cogs.console_logger")
+
+
 # ---------------------------------------------------------
 # 0. ВЕБ-СЕРВЕР ДЛЯ ПРЕДОТВРАЩЕНИЯ ОТКЛЮЧЕНИЯ НА RENDER
 # ---------------------------------------------------------
