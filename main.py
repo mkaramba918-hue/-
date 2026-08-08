@@ -4,9 +4,9 @@ from discord.ext import commands
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 import discord
-from discord.ext import commands
+from discord.ext 
 import asyncio
-
+import commands
 import sys                                                                
 import datetime
 import sqlite3
