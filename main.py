@@ -15,6 +15,37 @@ import yt_dlp
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
+MUTE_ROLE_ID = 1530607100701442208  # Замените это число на реальный ID вашей роли мута из Discord
+
+WARN_ROLES = {
+    1: 1512870192076685442,  # ID роли за 1 варн
+    2: 1512870420339101746,  # ID роли за 2 варна
+    3: 1512870515960971274   # ID роли за 3 варна
+
+# Подключение к базе данных варнов (создаст файл warns.db)
+conn = sqlite3.connect("warns.db")
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS warns (
+    user_id INTEGER PRIMARY KEY,
+    count INTEGER DEFAULT 0
+)
+""")
+conn.commit()
+
+def get_warns(user_id: int) -> int:
+    cursor.execute("SELECT count FROM warns WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    return row[0] if row else 0
+
+def update_warns(user_id: int, delta: int) -> int:
+    current = get_warns(user_id)
+    new_count = max(0, current + delta)
+    cursor.execute("INSERT OR REPLACE INTO warns (user_id, count) VALUES (?, ?)", (user_id, new_count))
+    conn.commit()
+    return new_count
+    
 app = Flask("")
 
 
@@ -397,6 +428,22 @@ async def getlogs_slash(interaction: discord.Interaction):
 # ---------------------------------------------------------
 # 6. СЛЭШ-КОМАНДЫ ДОЛЖНОСТЕЙ И МОДЕРАЦИИ
 # ---------------------------------------------------------
+@bot.tree.command(name="unmute", description="Снять мут и забрать роль")
+@app_commands.default_permissions(moderate_members=True)
+async def unmute(interaction: discord.Interaction, member: discord.Member, reason: str = "Снятие мута"):
+    # 1. Убираем роль
+    mute_role = interaction.guild.get_role(MUTE_ROLE_ID)
+    if mute_role and mute_role in member.roles:
+        await member.remove_roles(mute_role, reason=reason)
+        
+    # 2. Снимаем таймаут
+    await member.timeout(None, reason=reason)
+    
+    await interaction.response.send_message(
+        f"✅ С пользователя {member.mention} снят мут и убрана роль.", 
+        ephemeral=False
+    )
+    
 
 @bot.tree.command(name="gmod", description="Назначить Главного модератора")
 @app_commands.describe(member="Участник")
@@ -537,17 +584,23 @@ async def ban(interaction: discord.Interaction, member: discord.Member, days: in
     await member.ban(reason=reason, delete_message_days=del_days)
     await interaction.response.send_message(f"⛔️ Участник **{member.name}** забанен. Причина: {reason}")
   
-@bot.tree.command(name="mute", description="Выдать мут (тайм-аут) участнику")
-@app_commands.describe(member="Участник", duration_minutes="Длительность в минутах", reason="Причина мута")
-@app_commands.checks.has_permissions(moderate_members=True)
-async def mute(interaction: discord.Interaction, member: discord.Member, duration_minutes: int, reason: str = "Причина не указана"):
-    try:
-        duration = datetime.timedelta(minutes=duration_minutes)
-        await member.timeout(duration, reason=reason)
-        await interaction.response.send_message(f"🔇 Участник **{member.name}** получил мут на {duration_minutes} мин. Причина: {reason}")
-    except Exception as e:
-        await interaction.response.send_message(f"❌ Не удалось выдать мут: {e}", ephemeral=True)
-
+@bot.tree.command(name="mute", description="Замутить пользователя и выдать роль")
+@app_commands.default_permissions(moderate_members=True)
+async def mute(interaction: discord.Interaction, member: discord.Member, minutes: int, reason: str = "Не указана"):
+    # 1. Выдаем роль
+    mute_role = interaction.guild.get_role(MUTE_ROLE_ID)
+    if mute_role:
+        await member.add_roles(mute_role, reason=f"Мут: {reason}")
+    
+    # 2. Устанавливаем таймаут
+    duration = discord.utils.utcnow() + discord.timedelta(minutes=minutes)
+    await member.timeout(duration, reason=reason)
+    
+    await interaction.response.send_message(
+        f"🔇 Пользователь {member.mention} замучен на {minutes} мин. Роль выдана.", 
+        ephemeral=False
+    )
+    
 # ---------------------------------------------------------
 # ЗАПУСК БОТА И WEB-СЕРВЕРА
 # ---------------------------------------------------------
