@@ -5,10 +5,9 @@ from discord.ext import commands
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 import discord
 from discord.ext import commands
+import asyncio
 
-# Указываем префикс "!" для текстовых команд вроде !getlogs
-bot = commands.Bot(command_prefix="!", intents=discord.Intents.all(ort
-import sys                                                                importort asyncio
+import sys                                                                
 import datetime
 import sqlite3
 import discord
