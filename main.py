@@ -215,6 +215,7 @@ async def on_ready():
   except Exception as e:
     print(f"Ошибка синхронизации: {e}")
       
+await bot.load_extension("cogs.shop")
 
 # --------------------------------------------------------#
 # 5. КОМАНДЫ ЭКОНОМИКИ, НАГРАД И МАГАЗИНА                  #
