@@ -14,28 +14,6 @@ from privates import CreateRoomButtonView, on_voice_state_update
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
-class DiscordLogHandler(logging.Handler):
-
-    def __init__(self, bot, channel_id: int):
-        super().__init__()
-        self.bot = bot
-        self.channel_id = channel_id
-
-    def emit(self, record):
-        log_entry = self.format(record)
-        self.bot.loop.create_task(self.send_log(log_entry))
-
-    async def send_log(self, message: str):
-        await self.bot.wait_until_ready()
-        channel = self.bot.get_channel(self.channel_id)
-        if channel:
-            try:
-                if len(message) > 1900:
-                    message = message[:1900] + "..."
-                await channel.send(f"```ini\n{message}\n```")
-            except Exception as e:
-                print(f"Ошибка отправки лога: {e}")
-
 app = Flask("")
 
 
@@ -194,18 +172,6 @@ async def on_ready():
 
 bot.add_listener(on_voice_state_update, 'on_voice_state_update')
     # Инициализация отправки логов в канал
-    LOG_CHANNEL_ID = 1535375319517626448
-if not any(
-    isinstance(h, DiscordLogHandler) for h in logging.getLogger().handlers
-):
-    handler = DiscordLogHandler(bot, LOG_CHANNEL_ID)
-    handler.setFormatter(
-        logging.Formatter(
-            "[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"
-        )
-    )
-    logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.INFO)
     
 # ---------------------------------------------------------
 # Проверка прав на должности
@@ -838,6 +804,57 @@ async def add_money(ctx, member: discord.Member, amount: int):
     
     await ctx.send(f"Успешно выдано **{amount}** монет пользователю {member.mention}! (Баланс: {user_balances[member.id]})")
 
+class DiscordLogHandler(logging.Handler):
+
+    def __init__(self, bot, channel_id: int):
+        super().__init__()
+        self.bot = bot
+        self.channel_id = channel_id
+
+    def emit(self, record):
+        log_entry = self.format(record)
+        self.bot.loop.create_task(self.send_log(log_entry))
+
+    async def send_log(self, message: str):
+        await self.bot.wait_until_ready()
+        channel = self.bot.get_channel(self.channel_id)
+        if channel:
+            try:
+                if len(message) > 1900:
+                    message = message[:1900] + "..."
+                await channel.send(f"```ini\n{message}\n```")
+            except Exception as e:
+                print(f"Ошибка отправки лога: {e}")
+
+app = Flask("")
+
+@app.route("/")
+def home():
+    return "Bot is alive and running 24/7!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
+
+def keep_alive():
+    t = Thread(target=run_web)
+    t.start()
+
+LOG_BUFFER = []
+MAX_BUFFER_SIZE = 25
+
+LOG_CHANNEL_ID = 1535375319517626448
+if not any(
+    isinstance(h, DiscordLogHandler) for h in logging.getLogger().handlers
+):
+    handler = DiscordLogHandler(bot, LOG_CHANNEL_ID)
+    handler.setFormatter(
+        logging.Formatter(
+            "[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"
+        )
+    )
+    logging.getLogger().addHandler(handler)
+    logging.getLogger().setLevel(logging.INFO)
 
 # --- Запуск бота ---
 
