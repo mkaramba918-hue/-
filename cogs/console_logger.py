@@ -62,7 +62,6 @@ class ConsoleLogger(commands.Cog):
   async def getlogs_slash(self, interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
 
-    # Сохраняем текущий канал как канал для логов
     try:
       conn = sqlite3.connect("economy.db")
       cursor = conn.cursor()
@@ -85,7 +84,6 @@ class ConsoleLogger(commands.Cog):
     if len(logs_text) > 1900:
       logs_text = logs_text[-1900:]
 
-    # Отправляем логи в публичный канал, чтобы вы их увидели
     await interaction.channel.send(
         f"📜 **Последние логи из буфера:**\n```py\n{logs_text}\n```"
     )
@@ -95,5 +93,8 @@ class ConsoleLogger(commands.Cog):
     )
 
 
+# <-- ВОТ СЮДА (в самый конец файла `cogs/console_logger.py`) -->
 async def setup(bot):
+  print("🔥 КОГ CONSOLE_LOGGER УСПЕШНО ПОДКЛЮЧЕН!")
   await bot.add_cog(ConsoleLogger(bot))
+  
