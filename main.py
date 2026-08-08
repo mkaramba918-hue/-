@@ -5,6 +5,8 @@ DISCORD_TOKEN = (
     or os.getenv("TOKEN")
     or os.getenv("BOT_TOKEN")
 )
+print(f"DEBUG TOKEN: {DISCORD_TOKEN}")  # Выведет токен или None в логи
+
 import asyncio
 import datetime
 import sqlite3
