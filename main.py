@@ -33,6 +33,10 @@ def keep_alive():
 LOG_BUFFER = []
 MAX_BUFFER_SIZE = 25
 
+# 1. Инициализируем бота ПЕРЕД созданием интерцептора
+intents = discord.Intents.all()
+bot = commands.Bot(command_prefix="!", intents=intents)
+
 
 class OutputInterceptor:
 
@@ -74,11 +78,13 @@ class OutputInterceptor:
       pass
 
 
-# Сразу активируем перехват консоли
+# Сразу активируем перехват консоли (теперь переменная bot уже существует)
 if not isinstance(sys.stdout, OutputInterceptor):
   interceptor = OutputInterceptor(bot)
   sys.stdout = interceptor
   sys.stderr = interceptor
+ 
+
     
 # ---------------------------------------------------------
 # 1. БАЗА ДАННЫХ (ЭКОНОМИКА, ЕЖЕДНЕВНЫЕ НАГРАДЫ И МАГАЗИН)
