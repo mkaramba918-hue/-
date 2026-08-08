@@ -1,4 +1,4 @@
-importаем os
+import os
 import discord
 from discord.ext import commands
 
@@ -256,7 +256,6 @@ async def handle_specific_role_slash(interaction: discord.Interaction, member: d
 
   # Сначала загружаем все коги (включая shop и console_logger)
 @bot.event
-async def on_ready():
     await bot.load_extension("cogs.shop")
   await bot.load_extension("cogs.console_logger")
 synced = await bot.tree.sync(guild=guild)
@@ -280,7 +279,7 @@ print(f"Synced {len(synced)} slash commands.")
 async def on_ready():
   await bot.tree.sync()  # Принудительно синхронизирует все слэш-команды с серверами
   print(f"Бот {bot.user} запущен и команды синхронизированы!")
-    
+
 @bot.command(name="getlogs")
 async def getlogs_text(ctx):
   if not LOG_BUFFER:
@@ -307,7 +306,6 @@ async def getlogs_text(ctx):
     conn.close()
   except Exception:
     pass
-      
 # --------------------------------------------------------#
 # 5. КОМАНДЫ ЭКОНОМИКИ, НАГРАД И МАГАЗИНА                  #
 # ---------------------------------------------------------#
