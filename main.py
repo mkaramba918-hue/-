@@ -251,11 +251,10 @@ async def handle_specific_role_slash(interaction: discord.Interaction, member: d
 async def on_ready():
     # 1. Загружаем коги
     try:
-     
-    await bot.load_extension("cogs.shop")
-  await bot.load_extension("cogs.console_logger")
-synced = await bot.tree.sync(guild=guild)
-print(f"Synced {len(synced)} slash commands.")
+        await bot.load_extension("cogs.shop")
+        await bot.load_extension("cogs.console_logger")
+        synced = await bot.tree.sync(guild=guild)
+        print(f"Synced {len(synced)} slash commands.")
 
   # Затем синхронизируем дерево команд с Discord
   await bot.tree.sync()
