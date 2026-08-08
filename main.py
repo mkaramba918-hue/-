@@ -33,11 +33,14 @@ def keep_alive():
 LOG_BUFFER = []
 MAX_BUFFER_SIZE = 25
 
-# 1. Инициализируем бота ПЕРЕД созданием интерцептора
-intents = discord.Intents.all()
+# 1. ОБЯЗАТЕЛЬНО СНАЧАЛА СОЗДАЕМ БОТА:
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+intents.voice_states = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-
+# 2. ПОТОМ ИДЕТ КЛАСС ПЕРЕХВАТЧИКА:
 class OutputInterceptor:
 
   def __init__(self, bot):
@@ -77,15 +80,12 @@ class OutputInterceptor:
     except Exception:
       pass
 
-
-# Сразу активируем перехват консоли (теперь переменная bot уже существует)
+# 3. И ТОЛЬКО ПОСЛЕ ЭТОГО ВКЛЮЧАЕМ ПЕРЕХВАТ:
 if not isinstance(sys.stdout, OutputInterceptor):
   interceptor = OutputInterceptor(bot)
   sys.stdout = interceptor
   sys.stderr = interceptor
  
-
-    
 # ---------------------------------------------------------
 # 1. БАЗА ДАННЫХ (ЭКОНОМИКА, ЕЖЕДНЕВНЫЕ НАГРАДЫ И МАГАЗИН)
 # ---------------------------------------------------------
