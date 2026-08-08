@@ -856,6 +856,25 @@ async def on_message_delete(message):
 
 
 @bot.event
+async def on_raw_message_delete(payload):
+    # Этот обработчик срабатывает даже при очистке через /clear или если сообщение не попало в кэш
+    channel = bot.get_channel(LOG_CHANNEL_ID)
+    if not channel:
+        return
+    
+    # Если сообщение было в кэше, on_message_delete уже отправил лог, пропускаем чтобы не было дубля
+    if payload.cached_message:
+        return
+
+    target_channel = bot.get_channel(payload.channel_id)
+    channel_mention = target_channel.mention if target_channel else f"<#{payload.channel_id}>"
+
+    await channel.send(
+        f"🗑️ **Сообщение удалено (из кэша/очистки)**\n"
+        f"• **Канал:** {channel_mention}\n"
+        f"• **ID сообщения:** `{payload.message_id}`"
+
+@bot.event
 async def on_message_edit(before, after):
     if before.author.bot or before.content == after.content:
         return
