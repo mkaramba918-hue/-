@@ -1,4 +1,10 @@
 import os
+
+DISCORD_TOKEN = (
+    os.getenv("DISCORD_TOKEN")
+    or os.getenv("TOKEN")
+    or os.getenv("BOT_TOKEN")
+)
 import asyncio
 import datetime
 import sqlite3
@@ -711,5 +717,5 @@ if __name__ == "__main__":
     if not TOKEN:
         print("❌ Ошибка: Не найден токен бота в переменных окружения (DISCORD_TOKEN).")
     else:
-        bot.run("DISCORD_TOKEN")
+        bot.run(DISCORD_TOKEN)
         
