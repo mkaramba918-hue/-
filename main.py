@@ -10,7 +10,7 @@ from discord.ext import commands
 from discord import app_commands
 import logging
 # Импортируем функционал приваток из privates.py
-from privates import CreateRoomButtonView, on_voice_state_update
+from privates import CreateRoomButtonView
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
