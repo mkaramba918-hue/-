@@ -197,9 +197,7 @@ async def handle_specific_role_slash(interaction: discord.Interaction, member: d
 
 async def load_extensions():
   await bot.load_extension("cogs.shop")
-  await bot.load_extension("cogs.logger")
-
-
+  
 @bot.event
 async def on_ready():
   print(f"Logged in as {bot.user}")
