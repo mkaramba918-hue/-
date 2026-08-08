@@ -1112,27 +1112,51 @@ async def on_raw_message_bulk_delete(payload):
 
 @bot.event
 async def on_message(message):
-    # Игнорируем сообщения самого бота, чтобы он не зацикливался
+    # Игнорируем сообщения самого бота
     if message.author.bot:
         return
 
-    # Не логируем сообщения, если они пищутся прямо в сам канал логов (по желанию)
+    # Не логируем сообщения из самого канала логов
     if message.channel.id == LOG_CHANNEL_ID:
-        await bot.process_commands(message) # Обязательно, чтобы работали другие команды!
+        await bot.process_commands(message)
         return
 
-    # Находим канал для логов
     log_channel = message.guild.get_channel(LOG_CHANNEL_ID)
     if log_channel:
-        content = message.content if message.content else "*[Картинка / Вложение / Эмбед]*"
-        await log_channel.send(
+        # Собираем текст сообщения
+        content_text = message.content if message.content else "*[Текста нет]*"
+        
+        # Информация об авторе и канале
+        log_text = (
             f"💬 **Новое сообщение**\n"
             f"• **Автор:** {message.author.mention} (`{message.author.id}`)\n"
             f"• **Канал:** {message.channel.mention}\n"
-            f"• **Текст:** {content}"
+            f"• **Текст:** {content_text}"
         )
 
-    # Важно: это нужно, чтобы у бота продолжали работать остальные команды (!help, /clear и т.д.)
+        # Обработка стикеров (если есть)
+        if message.stickers:
+            sticker_names = ", ".join([s.name for s in message.stickers])
+            log_text += f"\n• **Стикер(ы):** `{sticker_names}`"
+
+        # Обработка картинок и файлов (если прикреплены)
+        files_to_send = []
+        if message.attachments:
+            for attachment in message.attachments:
+                try:
+                    # Скачиваем файл/картинку, чтобы бот мог переслать ее в лог
+                    file = await attachment.to_file()
+                    files_to_send.append(file)
+                except Exception:
+                    pass
+
+        # Отправляем лог вместе с картинками/файлами (если они были)
+        if files_to_send:
+            await log_channel.send(log_text, files=files_to_send)
+        else:
+            await log_channel.send(log_text)
+
+    # Обязательно для работы остальных команд бота (!help, /clear и т.д.)
     await bot.process_commands(message)
     
 # --- Запуск бота ---
