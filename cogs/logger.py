@@ -9,16 +9,17 @@ class Logger(commands.Cog):
     self.bot = bot
 
   # Инициализация таблицы для логов при необходимости
-  def get_log_channel(self, guild_id):
-    conn = sqlite3.connect("economy.db")
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT value FROM settings WHERE key = ?", (f"log_channel_{guild_id}",)
-    )
-    row = cursor.fetchone()
-    conn.close()
-    return int(row[0]) if row else None
-
+      def get_log_channel(self, guild_id):
+      conn = sqlite3.connect("economy.db")
+      cursor = conn.cursor()
+      cursor.execute(
+          "SELECT value FROM settings WHERE key = ?",
+          (f"log_channel_{guild_id}",),
+      )
+      row = cursor.fetchone()
+      conn.close()
+      return int(row[0]) if row else None
+        
   @commands.command(name="setlog")
   @commands.has_permissions(administrator=True)
   async def setlog(self, ctx, channel: discord.TextChannel):
