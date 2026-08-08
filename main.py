@@ -712,5 +712,5 @@ if __name__ == "__main__":
     if not TOKEN:
         print("❌ Ошибка: Не найден токен бота в переменных окружения (DISCORD_TOKEN).")
     else:
-        bot.run(TOKEN)
+        bot.run(DISCORD_TOKEN)
         
