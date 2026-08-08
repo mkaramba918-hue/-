@@ -211,7 +211,7 @@ async def on_ready():
     # 1. Загружаем коги
     try:
         await bot.load_extension("cogs.shop")
-        await bot.load_extension("cogs.console_logger")
+        await bot.load_extension("logger.py")
         print("✅ Коги успешно загружены!")
     except Exception as e:
         print(f"❌ Ошибка загрузки когов: {e}")
