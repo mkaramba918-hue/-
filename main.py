@@ -1093,7 +1093,22 @@ async def on_member_update(before, after):
                 f"🔊 **Мут снят**\n• **Пользователь:** {after.mention}\n• **Снял:** {moderator}"
             )
             
+@bot.event
+async def on_raw_message_bulk_delete(payload):
+    channel = bot.get_channel(LOG_CHANNEL_ID)
+    if not channel:
+        return
 
+    target_channel = bot.get_channel(payload.channel_id)
+    channel_mention = target_channel.mention if target_channel else f"<#{payload.channel_id}>"
+    count = len(payload.message_ids)
+
+    await channel.send(
+        f"🧹 **Массовое удаление сообщений (очистка)**\n"
+        f"• **Канал:** {channel_mention}\n"
+        f"• **Удалено сообщений:** `{count}`"
+    )
+    
 # --- Запуск бота ---
 
 if __name__ == "__main__":
