@@ -8,19 +8,19 @@ cursor = conn.cursor()
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
-        balance INTEGER DEFAULT 0
+        points INTEGER DEFAULT 0
     )
 """)
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS shop_roles (
         role_id INTEGER PRIMARY KEY,
         price INTEGER DEFAULT 0,
-        owner_id INTEGER DEFAULT 0,
+        owner_id INTEGER INTEGER DEFAULT 0,
         purchases INTEGER DEFAULT 0
     )
 """)
 try:
-  cursor.execute("ALTER TABLE users ADD COLUMN balanceeNTEGER DEFAULT 0")
+  cursor.execute("ALTER TABLE users ADD COLUMN points INTEGER DEFAULT 0")
 except sqlite3.OperationalError:
   pass
 conn.commit()
@@ -49,8 +49,9 @@ class RoleBuyButton(discord.ui.Button):
     conn = sqlite3.connect("economy.db")
     cursor = conn.cursor()
 
+    # Запрашиваем points вместо balance
     cursor.execute(
-        "SELECT balance FROM users WHERE user_id = ?", (interaction.user.id,)
+        "SELECT points FROM users WHERE user_id = ?", (interaction.user.id,)
     )
     user_row = cursor.fetchone()
     user_balance = user_row[0] if user_row else 0
@@ -64,6 +65,7 @@ class RoleBuyButton(discord.ui.Button):
       )
       return
 
+    # Списываем points
     cursor.execute(
         "UPDATE users SET points = points - ? WHERE user_id = ?",
         (self.price, interaction.user.id),
@@ -195,4 +197,4 @@ class Shop(commands.Cog):
 
 async def setup(bot):
   await bot.add_cog(Shop(bot))
-  
+    
