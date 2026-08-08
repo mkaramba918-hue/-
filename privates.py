@@ -119,13 +119,4 @@ async def setup_settings_panel(ctx):
         pass
 
 # 6. Автоматическое удаление пустых приваток
-async def on_voice_state_update(member, before, after):
-    if before.channel and before.channel.id in active_private_channels:
-        if len(before.channel.members) == 0:
-            room_id = before.channel.id
-            del active_private_channels[room_id]
-            try:
-                await before.channel.delete()
-            except:
-                pass
-        
+
