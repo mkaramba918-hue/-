@@ -707,7 +707,7 @@ async def add_money(ctx, member: discord.Member, amount: int):
 
 if __name__ == "__main__":
     keep_alive()
-    TOKEN = os.environ.get("DISCORD_TOKEN)
+    TOKEN = os.environ.get("DISCORD_TOKEN")
     if not TOKEN:
         print("❌ Ошибка: Не найден токен бота в переменных окружения (DISCORD_TOKEN).")
     else:
