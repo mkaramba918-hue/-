@@ -56,30 +56,19 @@ class ConsoleLogger(commands.Cog):
       sys.stdout = interceptor
       sys.stderr = interceptor
 
-  # Дублируем команду и как префиксную (!getlogs), и как слэш-команду (/getlogs), чтобы она точно работала!
-  @commands.command(name="getlogs", description="Скинуть накопленные логи")
-  async def getlogs_prefix(self, ctx):
-    await self.send_logs_to_channel(ctx.channel, ctx.guild.id)
-
   @discord.app_commands.command(
-      name="getlogs", description="Получить последние логи в этот чат"
+      name="getlogs", description="Получить последние логи и привязать этот канал"
   )
   async def getlogs_slash(self, interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    await self.send_logs_to_channel(interaction.channel, interaction.guild.id)
-    await interaction.followup.send(
-        "✅ Последние логи отправлены в этот чат и канал привязан!",
-        ephemeral=True,
-    )
 
-  async def send_logs_to_channel(self, channel, guild_id):
-    # Сохраняем текущий канал как канал логов
+    # Сохраняем текущий канал как канал для логов
     try:
       conn = sqlite3.connect("economy.db")
       cursor = conn.cursor()
       cursor.execute(
           "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-          (f"log_channel_{guild_id}", str(channel.id)),
+          (f"log_channel_{interaction.guild.id}", str(interaction.channel.id)),
       )
       conn.commit()
       conn.close()
@@ -87,18 +76,24 @@ class ConsoleLogger(commands.Cog):
       pass
 
     if not LOG_BUFFER:
-      await channel.send("📭 Буфер логов пока пуст.")
+      await interaction.followup.send(
+          "📭 Буфер логов пока пуст, но канал успешно привязан!", ephemeral=True
+      )
       return
 
     logs_text = "\n".join(LOG_BUFFER)
     if len(logs_text) > 1900:
       logs_text = logs_text[-1900:]
 
-    await channel.send(
+    # Отправляем логи в публичный канал, чтобы вы их увидели
+    await interaction.channel.send(
         f"📜 **Последние логи из буфера:**\n```py\n{logs_text}\n```"
+    )
+    await interaction.followup.send(
+        "✅ Готово! Логи отправлены в чат, а канал привязан для будущих ошибок.",
+        ephemeral=True,
     )
 
 
 async def setup(bot):
   await bot.add_cog(ConsoleLogger(bot))
-  
