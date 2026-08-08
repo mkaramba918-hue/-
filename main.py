@@ -848,7 +848,10 @@ async def on_message_delete(message):
     channel = bot.get_channel(LOG_CHANNEL_ID)
     if channel:
         await channel.send(
-            f"🗑️ **Сообщение удалено** | В канале {message.channel.mention}\nАвтор: {message.author.mention}\nТекст: {message.content}"
+            f"🗑️ **Сообщение удалено**\n"
+            f"• **Автор:** {message.author.mention} (`{message.author.id}`)\n"
+            f"• **Канал:** {message.channel.mention}\n"
+            f"• **Текст:** {message.content or '*[Пусто / Медиа]*'}"
         )
 
 
@@ -859,7 +862,11 @@ async def on_message_edit(before, after):
     channel = bot.get_channel(LOG_CHANNEL_ID)
     if channel:
         await channel.send(
-            f"✏️ **Сообщение изменено** | В канале {before.channel.mention}\nАвтор: {before.author.mention}\nБыло: {before.content}\nСтало: {after.content}"
+            f"✏️ **Сообщение отредактировано**\n"
+            f"• **Автор:** {before.author.mention}\n"
+            f"• **Канал:** {before.channel.mention}\n"
+            f"• **Было:** {before.content or '*[Пусто]*'}\n"
+            f"• **Стало:** {after.content or '*[Пусто]*'}"
         )
 
 
@@ -873,26 +880,198 @@ async def on_voice_state_update(member, before, after):
 
     if before.channel is None and after.channel is not None:
         await channel.send(
-            f"🔊 **{member.name}** вошел в голосовой канал **{after.channel.name}**"
+            f"🔊 **Подключение к войсу**\n• **Участник:** {member.mention}\n• **Канал:** **{after.channel.name}**"
         )
     elif before.channel is not None and after.channel is None:
         await channel.send(
-            f"🔇 **{member.name}** вышел из голосового канала **{before.channel.name}**"
+            f"🔇 **Выход из войса**\n• **Участник:** {member.mention}\n• **Канал:** **{before.channel.name}**"
         )
     elif before.channel != after.channel:
         await channel.send(
-            f"🔀 **{member.name}** переместился: **{before.channel.name}** ➡️ **{after.channel.name}**"
+            f"🔀 **Перемещение в войсе**\n• **Участник:** {member.mention}\n• **Маршрут:** **{before.channel.name}** ➡️ **{after.channel.name}**"
         )
 
 
 @bot.event
 async def on_member_ban(guild, user):
-    channel = bot.get_channel(LOG_CHANNEL_ID)
+    channel = guild.get_channel(LOG_CHANNEL_ID)
+    if not channel:
+        return
+
+    moderator = "Неизвестно"
+    try:
+        async for entry in guild.audit_logs(limit=3, action=discord.AuditLogAction.ban):
+            if entry.target.id == user.id:
+                moderator = entry.user.mention
+                break
+    except Exception:
+        pass
+
+    await channel.send(
+        f"🚫 **Участник забанен**\n"
+        f"• **Пользователь:** {user.mention} (`{user.id}`)\n"
+        f"• **Забанил:** {moderator}"
+    )
+
+
+@bot.event
+async def on_member_unban(guild, user):
+    channel = guild.get_channel(LOG_CHANNEL_ID)
+    if not channel:
+        return
+
+    moderator = "Неизвестно"
+    try:
+        async for entry in guild.audit_logs(limit=3, action=discord.AuditLogAction.unban):
+            if entry.target.id == user.id:
+                moderator = entry.user.mention
+                break
+    except Exception:
+        pass
+
+    await channel.send(
+        f"✅ **Участник разбанен**\n"
+        f"• **Пользователь:** {user.mention} (`{user.id}`)\n"
+        f"• **Разбанил:** {moderator}"
+    )
+
+
+@bot.event
+async def on_member_join(member):
+    channel = member.guild.get_channel(LOG_CHANNEL_ID)
     if channel:
         await channel.send(
-            f"🚫 **Участник забанен:** {user.name} (ID: {user.id})"
+            f"📥 **Новый участник**\n• **Пользователь:** {member.mention} (`{member.id}`)"
         )
-        
+
+
+@bot.event
+async def on_member_remove(member):
+    channel = member.guild.get_channel(LOG_CHANNEL_ID)
+    if not channel:
+        return
+
+    # Проверяем, был ли это кик (удаление с сервера администратором)
+    action_type = discord.AuditLogAction.kick
+    moderator = None
+    try:
+        async for entry in member.guild.audit_logs(limit=3, action=action_type):
+            if entry.target.id == member.id:
+                moderator = entry.user.mention
+                break
+    except Exception:
+        pass
+
+    if moderator:
+        await channel.send(
+            f"👢 **Участник изгнан (Кик)**\n"
+            f"• **Пользователь:** {member.mention} (`{member.id}`)\n"
+            f"• **Выгнал:** {moderator}"
+        )
+    else:
+        await channel.send(
+            f"📤 **Участник покинул сервер**\n"
+            f"• **Пользователь:** {member.mention} (`{member.id}`)"
+        )
+
+
+@bot.event
+async def on_guild_channel_create(channel_obj):
+    channel = channel_obj.guild.get_channel(LOG_CHANNEL_ID)
+    if not channel:
+        return
+
+    moderator = "Неизвестно"
+    try:
+        async for entry in channel_obj.guild.audit_logs(limit=3, action=discord.AuditLogAction.channel_create):
+            if entry.target.id == channel_obj.id:
+                moderator = entry.user.mention
+                break
+    except Exception:
+        pass
+
+    await channel.send(
+        f"📁 **Создан канал**\n"
+        f"• **Название:** {channel_obj.name}\n"
+        f"• **Создал:** {moderator}"
+    )
+
+
+@bot.event
+async def on_guild_channel_delete(channel_obj):
+    channel = channel_obj.guild.get_channel(LOG_CHANNEL_ID)
+    if not channel:
+        return
+
+    moderator = "Неизвестно"
+    try:
+        async for entry in channel_obj.guild.audit_logs(limit=3, action=discord.AuditLogAction.channel_delete):
+            if entry.target.id == channel_obj.id:
+                moderator = entry.user.mention
+                break
+    except Exception:
+        pass
+
+    await channel.send(
+        f"🗑️ **Удален канал**\n"
+        f"• **Название:** {channel_obj.name}\n"
+        f"• ** Удалил:** {moderator}"
+    )
+
+
+@bot.event
+async def on_member_update(before, after):
+    channel = before.guild.get_channel(LOG_CHANNEL_ID)
+    if not channel:
+        return
+
+    if before.roles != after.roles:
+        added_roles = [role for role in after.roles if role not in before.roles]
+        removed_roles = [
+            role for role in before.roles if role not in after.roles
+        ]
+
+        moderator = "Неизвестно"
+        try:
+            async for entry in before.guild.audit_logs(
+                limit=3, action=discord.AuditLogAction.member_role_update
+            ):
+                if entry.target.id == after.id:
+                    moderator = entry.user.mention
+                    break
+        except Exception:
+            pass
+
+        for role in added_roles:
+            await channel.send(
+                f"👑 **Роль назначена**\n• **Участник:** {after.mention}\n• **Роль:** {role.mention}\n• **Выдал:** {moderator}"
+            )
+        for role in removed_roles:
+            await channel.send(
+                f"❌ **Роль снята**\n• **Участник:** {after.mention}\n• **Роль:** {role.mention}\n• **Снял:** {moderator}"
+            )
+
+    if before.timed_out_until != after.timed_out_until:
+        moderator = "Неизвестно"
+        try:
+            async for entry in before.guild.audit_logs(
+                limit=3, action=discord.AuditLogAction.member_update
+            ):
+                if entry.target.id == after.id:
+                    moderator = entry.user.mention
+                    break
+        except Exception:
+            pass
+
+        if after.timed_out_until:
+            await channel.send(
+                f"🤐 **Выдан мут (таймаут)**\n• **Пользователь:** {after.mention}\n• **До:** `{after.timed_out_until}`\n• **Выдал:** {moderator}"
+            )
+        else:
+            await channel.send(
+                f"🔊 **Мут снят**\n• **Пользователь:** {after.mention}\n• **Снял:** {moderator}"
+            )
+            
 
 # --- Запуск бота ---
 
