@@ -248,6 +248,9 @@ async def handle_specific_role_slash(interaction: discord.Interaction, member: d
 
   # Сначала загружаем все коги (включая shop и console_logger)
 @bot.event
+async def on_ready():
+    # 1. Загружаем коги
+    try:
     await bot.load_extension("cogs.shop")
   await bot.load_extension("cogs.console_logger")
 synced = await bot.tree.sync(guild=guild)
