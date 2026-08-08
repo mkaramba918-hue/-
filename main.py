@@ -1172,6 +1172,8 @@ ytdl_format_options = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',
+    'extractor_args': {'soundcloud': {'fetch_page': 'mobile'}},
+    'spotify': {
 }
 
 ffmpeg_options = {
