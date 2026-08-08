@@ -20,7 +20,7 @@ cursor.execute("""
     )
 """)
 try:
-  cursor.execute("ALTER TABLE users ADD COLUMN balance INTEGER DEFAULT 0")
+  cursor.execute("ALTER TABLE users ADD COLUMN balanceeNTEGER DEFAULT 0")
 except sqlite3.OperationalError:
   pass
 conn.commit()
@@ -65,7 +65,7 @@ class RoleBuyButton(discord.ui.Button):
       return
 
     cursor.execute(
-        "UPDATE users SET balance = balance - ? WHERE user_id = ?",
+        "UPDATE users SET points = points - ? WHERE user_id = ?",
         (self.price, interaction.user.id),
     )
     cursor.execute(
@@ -141,7 +141,7 @@ class RoleShopPaginator(discord.ui.View):
         f"{role_mention} — {role.name if role else 'Unknown'}\n\n"
         f"**Инфо**\n"
         f"👤 Владелец: {owner_mention}\n"
-        f"🪙 Цена: **{price}** coins\n"
+        f"🪙 Цена: **{price}** монет\n"
         f"🛒 Куплена раз: **{purchases}**"
     )
     return embed
