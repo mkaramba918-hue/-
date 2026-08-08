@@ -1,4 +1,4 @@
-import os
+app os
 import sys
 import asyncio
 import datetime
@@ -13,10 +13,8 @@ from discord import app_commands
 from privates import CreateRoomButtonView, on_voice_state_update
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
- #---------------------------------------------------------
-# 0. ВЕБ-СЕРВЕР ДЛЯ ПРЕДОТВРАЩЕНИЯ ОТКЛЮЧЕНИЯ НА RENDER
-# ---------------------------------------------------------
- app = Flask("")
+
+app = Flask("")
 
 
 @app.route("/")
@@ -37,7 +35,7 @@ def keep_alive():
 LOG_BUFFER = []
 MAX_BUFFER_SIZE = 25
 
-# 1. ОБЯЗАТЕЛЬНО СНАЧАЛА СОЗДАЕМ БОТА:
+# 1. СНАЧАЛА СОЗДАЕМ БОТА:
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -45,11 +43,10 @@ intents.voice_states = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-# 2. ПОТОМ ИДЕТ БЕЗОПАСНЫЙ КЛАСС ПЕРЕХВАТЧИКА:
-class OutputInterceptor:
+# 2. БЕЗОПАСНЫЙ ПЕРЕХВАТЧИК КОНСОЛИ (без вызова бота из потоков):
+class ConsoleCapture:
 
-  def __init__(self, bot):
-    self.bot = bot
+  def __init__(self):
     self.original_stdout = sys.stdout
     self.original_stderr = sys.stderr
 
@@ -63,44 +60,18 @@ class OutputInterceptor:
       if len(LOG_BUFFER) > MAX_BUFFER_SIZE:
         LOG_BUFFER.pop(0)
 
-      # Безопасно отправляем задачу в цикл бота из любого потока
-      if self.bot.loop and self.bot.loop.is_running():
-        asyncio.run_coroutine_threadsafe(
-            self.send_log_to_discord(cleaned), self.bot.loop
-        )
-
   def flush(self):
     self.original_stdout.flush()
     self.original_stderr.flush()
 
-  async def send_log_to_discord(self, message):
-    try:
-      conn = sqlite3.connect("economy.db")
-      cursor = conn.cursor()
-      cursor.execute("SELECT value FROM settings WHERE key LIKE 'log_channel_%'")
-      rows = cursor.fetchall()
-      conn.close()
 
-      for row in rows:
-        channel_id = int(row[0])
-        channel = self.bot.get_channel(channel_id)
-        if channel:
-          clean_msg = message[:1900]
-          await channel.send(f"🖥️ `LOG:` ```{clean_msg}```")
-    except Exception:
-      pass
-
-
-# 3. И ТОЛЬКО ПОСЛЕ ЭТОГО ВКЛЮЧАЕМ ПЕРЕХВАТ:
-if not isinstance(sys.stdout, OutputInterceptor):
-  interceptor = OutputInterceptor(bot)
+# 3. ВКЛЮЧАЕМ ПЕРЕХВАТ:
+if not isinstance(sys.stdout, ConsoleCapture):
+  interceptor = ConsoleCapture()
   sys.stdout = interceptor
   sys.stderr = interceptor
  
- 
-# ---------------------------------------------------------
-# 1. БАЗА ДАННЫХ (ЭКОНОМИКА, ЕЖЕДНЕВНЫЕ НАГРАДЫ И МАГАЗИН)
-# ---------------------------------------------------------
+
 def init_db():
     conn = sqlite3.connect('economy.db')
     cursor = conn.cursor()
