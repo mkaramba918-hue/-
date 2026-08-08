@@ -39,3 +39,12 @@ class Logger(commands.Cog):
 async def setup(bot):
   await bot.add_cog(Logger(bot))
   
+# Получаем экземпляр кога Logger (или обращаемся к базе данных напрямую)
+logger_cog = self.bot.get_cog("Logger")
+if logger_cog:
+    log_channel_id = logger_cog.get_log_channel(ctx.guild.id)
+    if log_channel_id:
+        log_channel = ctx.guild.get_channel(log_channel_id)
+        if log_channel:
+            await log_channel.send(f"⚠️ Пользователь {ctx.author} совершил действие в магазине!")
+          
