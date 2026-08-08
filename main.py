@@ -11,6 +11,7 @@ from discord import app_commands
 import logging
 # Импортируем функционал приваток из privates.py
 from privates import CreateRoomButtonView
+import yt_dlp
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
