@@ -169,7 +169,7 @@ class Shop(commands.Cog):
     self.bot = bot
 
   @discord.app_commands.command(
-      name="shop", description="Открыть магазин личных ролей"
+      name="role_shop", description="Открыть магазин личных ролей"
   )
   async def shop(self, interaction: discord.Interaction):
     conn = sqlite3.connect("economy.db")
