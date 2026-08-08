@@ -59,7 +59,7 @@ class RoleBuyButton(discord.ui.Button):
       conn.close()
       await interaction.response.send_message(
           f"❌ У вас недостаточно средств! Нужно: {self.price} монет, а у вас:"
-          f" {user_balance} coins.",
+          f" {user_balance} монет.",
           ephemeral=True,
       )
       return
@@ -78,7 +78,7 @@ class RoleBuyButton(discord.ui.Button):
     try:
       await interaction.user.add_roles(role)
       await interaction.response.send_message(
-          f"✅ Вы успешно купили роль {role.mention} за {self.price} coins!",
+          f"✅ Вы успешно купили роль {role.mention} за {self.price} монет!",
           ephemeral=True,
       )
     except discord.Forbidden:
