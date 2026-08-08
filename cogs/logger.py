@@ -39,4 +39,5 @@ class Logger(commands.Cog):
 
 
 async def setup(bot):
-  await bot.add_cog(Logger(bot))
+  await bot.load_extension("cogs.logger")
+  
