@@ -1108,6 +1108,32 @@ async def on_raw_message_bulk_delete(payload):
         f"• **Канал:** {channel_mention}\n"
         f"• **Удалено сообщений:** `{count}`"
     )
+
+
+@bot.event
+async def on_message(message):
+    # Игнорируем сообщения самого бота, чтобы он не зацикливался
+    if message.author.bot:
+        return
+
+    # Не логируем сообщения, если они пищутся прямо в сам канал логов (по желанию)
+    if message.channel.id == LOG_CHANNEL_ID:
+        await bot.process_commands(message) # Обязательно, чтобы работали другие команды!
+        return
+
+    # Находим канал для логов
+    log_channel = message.guild.get_channel(LOG_CHANNEL_ID)
+    if log_channel:
+        content = message.content if message.content else "*[Картинка / Вложение / Эмбед]*"
+        await log_channel.send(
+            f"💬 **Новое сообщение**\n"
+            f"• **Автор:** {message.author.mention} (`{message.author.id}`)\n"
+            f"• **Канал:** {message.channel.mention}\n"
+            f"• **Текст:** {content}"
+        )
+
+    # Важно: это нужно, чтобы у бота продолжали работать остальные команды (!help, /clear и т.д.)
+    await bot.process_commands(message)
     
 # --- Запуск бота ---
 
