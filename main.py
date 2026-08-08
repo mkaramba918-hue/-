@@ -259,7 +259,21 @@ async def getlogs_text(ctx):
         conn.close()
     except Exception:
         pass
-     
+
+@bot.command(name="fix_db")
+@commands.is_owner() # Чтобы только вы могли это запустить
+async def fix_db(ctx):
+  try:
+    conn = sqlite3.connect("economy.db")
+    cursor = conn.cursor()
+    cursor.execute("ALTER TABLE shop_roles ADD COLUMN owner_id INTEGER;")
+    cursor.execute("ALTER TABLE shop_roles ADD COLUMN purchases INTEGER DEFAULT 0;")
+    conn.commit()
+    conn.close()
+    await ctx.send("✅ База данных успешно обновлена!")
+  except Exception as e:
+    await ctx.send(f"❌ Ошибка (возможно, колонки уже есть): {e}")
+    
 # --------------------------------------------------------#
 # 5. КОМАНДЫ ЭКОНОМИКИ, НАГРАД И МАГАЗИНА                  #
 # ---------------------------------------------------------#
