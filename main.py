@@ -497,8 +497,17 @@ async def role_command(interaction: discord.Interaction, name: str, color: str):
 @app_commands.describe(amount="Количество сообщений для удаления")
 @app_commands.checks.has_permissions(manage_messages=True)
 async def clear(interaction: discord.Interaction, amount: int = 5):
-    await interaction.channel.purge(limit=amount + 1)
-    await interaction.response.send_message(f"🧹 Удалено сообщений: **{amount}**", ephemeral=True)
+  # 1. Сразу даем понять Discord, что бот думает (убирает ошибку 10062)
+  await interaction.response.defer(ephemeral=True)
+
+  # 2. Удаляем сообщения (плюс 1, чтобы удалить саму команду, если нужно)
+  deleted = await interaction.channel.purge(limit=amount + 1)
+
+  # 3. Отправляем результат через followup
+  await interaction.followup.send(
+      f"🧹 Удалено сообщений: **{len(deleted) - 1}**", ephemeral=True
+  )
+    
 
 @bot.tree.command(name="kick", description="Изгнать участника с сервера")
 @app_commands.describe(member="Участник", reason="Причина изгнания")
