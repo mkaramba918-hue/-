@@ -3,6 +3,11 @@ import discord
 from discord.ext import commands
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+import discord
+from discord.ext import commands
+
+# Указываем префикс "!" для текстовых команд вроде !getlogs
+bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
 import asyncio
 import datetime
 import sqlite3
@@ -202,7 +207,8 @@ async def handle_specific_role_slash(interaction: discord.Interaction, member: d
 async def load_extensions():
   await bot.load_extension("cogs.shop")
   await bot.load_extension("logger")
-    
+  await bot.load_extension("cogs.console_logger")
+
 @bot.event
 async def on_ready():
   print(f"Logged in as {bot.user}")
