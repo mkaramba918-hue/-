@@ -1,12 +1,8 @@
 import os
+import discord
+from discord.ext import commands
 
-DISCORD_TOKEN = (
-    os.getenv("DISCORD_TOKEN")
-    or os.getenv("TOKEN")
-    or os.getenv("BOT_TOKEN")
-)
-print(f"DEBUG TOKEN: {DISCORD_TOKEN}")
-
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 import asyncio
 import datetime
 import sqlite3
