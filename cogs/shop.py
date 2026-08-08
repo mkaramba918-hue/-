@@ -58,7 +58,7 @@ class RoleBuyButton(discord.ui.Button):
     if user_balance < self.price:
       conn.close()
       await interaction.response.send_message(
-          f"❌ У вас недостаточно средств! Нужно: {self.price} coins, а у вас:"
+          f"❌ У вас недостаточно средств! Нужно: {self.price} монет, а у вас:"
           f" {user_balance} coins.",
           ephemeral=True,
       )
