@@ -1,4 +1,7 @@
 import os
+
+# Если токен хранится в переменных среды Railway или в .env файле:
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 import asyncio
 import datetime
 import sqlite3
