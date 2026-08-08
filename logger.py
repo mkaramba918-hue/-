@@ -1,50 +1,57 @@
-import sqlite3
+import logging
 import discord
 from discord.ext import commands
 
+class DiscordLogHandler(logging.Handler):
+    """Обработчик, который перехватывает логи Python/хостинга и отправляет их в Discord моментально."""
+    def __init__(self, bot, channel_id: int):
+        super().__init__()
+        self.bot = bot
+        self.channel_id = channel_id
 
-class Logger(commands.Cog):
+    def emit(self, record):
+        log_entry = self.format(record)
+        # Запускаем отправку в фоновой задаче бота без блокировки потока
+        self.bot.loop.create_task(self.send_log(log_entry))
 
-  def __init__(self, bot):
-    self.bot = bot
+    async def send_log(self, message: str):
+        await self.bot.wait_until_ready()
+        channel = self.bot.get_channel(self.channel_id)
+        if channel:
+            try:
+                # Обрезаем сообщение под лимит Discord (2000 символов)
+                if len(message) > 1900:
+                    message = message[:1900] + "..."
+                await channel.send(f"```ini\n{message}\n```")
+            except Exception as e:
+                print(f"Ошибка отправки лога в канал: {e}")
 
-  def get_log_channel(self, guild_id):
-    conn = sqlite3.connect("economy.db")
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT value FROM settings WHERE key = ?",
-        (f"log_channel_{guild_id}",),
-    )
-    row = cursor.fetchone()
-    conn.close()
-    return int(row[0]) if row else None
 
-  @commands.command(name="setlog")
-  @commands.has_permissions(administrator=True)
-  async def setlog(self, ctx, channel: discord.TextChannel):
-    conn = sqlite3.connect("economy.db")
-    cursor = conn.cursor()
-    cursor.execute(
-        "CREATE TABLE IF NOT EXISTS settings (key TEXT, value TEXT)"
-    )
-    cursor.execute(
-        "REPLACE INTO settings (key, value) VALUES (?, ?)",
-        (f"log_channel_{ctx.guild.id}", str(channel.id)),
-    )
-    conn.commit()
-    conn.close()
-    await ctx.send(f"✅ Канал для логов успешно установлен на {channel.mention}!")
+class HostLogger(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        # ID вашего канала для логов (замените на нужный ID)
+        self.LOG_CHANNEL_ID = 123456789012345678 
+
+        # Подключаем перехватчик к системе логирования Python
+        self.handler = DiscordLogHandler(self.bot, self.LOG_CHANNEL_ID)
+        self.handler.setFormatter(logging.Formatter("[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"))
+        
+        root_logger = logging.getLogger()
+        root_logger.addHandler(self.handler)
+        root_logger.setLevel(logging.INFO)
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        logging.info(f"Система логов успешно активирована. Бот {self.bot.user} в сети.")
+
+    # Пример удобной функции для отправки кастомных логов (например, о покупках)
+    async def send_custom_log(self, text: str):
+        channel = self.bot.get_channel(self.LOG_CHANNEL_ID)
+        if channel:
+            await channel.send(f"📢 {text}")
 
 
 async def setup(bot):
-  await bot.add_cog(Logger(bot))
+  await bot.add_cog(HostLogger(bot))
   
-# Получаем экземпляр кога Logger (или обращаемся к базе данных напрямую)
-logger_cog = self.bot.get_cog("Logger")
-if logger_cog:
-    log_channel_id = logger_cog.get_log_channel(ctx.guild.id)
-    if log_channel_id:
-        log_channel = ctx.guild.get_channel(log_channel_id)
-        if log_channel:
-            await log_channel.send(f"⚠️ Пользователь {ctx.author} совершил действие в магазине!")
-          
