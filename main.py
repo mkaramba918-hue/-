@@ -281,7 +281,33 @@ async def on_ready():
   await bot.tree.sync()  # Принудительно синхронизирует все слэш-команды с серверами
   print(f"Бот {bot.user} запущен и команды синхронизированы!")
     
+@bot.command(name="getlogs")
+async def getlogs_text(ctx):
+  if not LOG_BUFFER:
+    await ctx.send("📭 Буфер логов пока пуст.")
+    return
 
+  logs_text = "\n".join(LOG_BUFFER)
+  if len(logs_text) > 1900:
+    logs_text = logs_text[-1900:]
+
+  await ctx.send(
+      f"📜 **Последние логи из буфера:**\n```py\n{logs_text}\n```"
+  )
+
+  # Сохраняем канал
+  try:
+    conn = sqlite3.connect("economy.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+        (f"log_channel_{ctx.guild.id}", str(ctx.channel.id)),
+    )
+    conn.commit()
+    conn.close()
+  except Exception:
+    pass
+      
 # --------------------------------------------------------#
 # 5. КОМАНДЫ ЭКОНОМИКИ, НАГРАД И МАГАЗИНА                  #
 # ---------------------------------------------------------#
