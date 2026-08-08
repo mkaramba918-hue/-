@@ -195,9 +195,23 @@ async def handle_specific_role_slash(interaction: discord.Interaction, member: d
     except discord.Forbidden:
         await interaction.response.send_message("❌ У бота недостаточно прав (передвиньте роль бота выше в списке ролей сервера).", ephemeral=True)
 
-# ---------------------------------------------------------#
-# 4. МАГАЗИН РОЛЕЙ (UI)                                    #
-# ---------------------------------------------------------#
+async def load_extensions():
+  await bot.load_extension("cogs.shop")
+  await bot.load_extension("cogs.logger")
+
+
+@bot.event
+async def on_ready():
+  print(f"Logged in as {bot.user}")
+  await load_extensions()
+  try:
+    guild = discord.Object(id=890471319815192597)
+    bot.tree.copy_global_to(guild=guild)
+    synced = await bot.tree.sync(guild=guild)
+    print(f"Synced {len(synced)} slash commands.")
+  except Exception as e:
+    print(f"Ошибка синхронизации: {e}")
+      
 
 # --------------------------------------------------------#
 # 5. КОМАНДЫ ЭКОНОМИКИ, НАГРАД И МАГАЗИНА                  #
