@@ -93,6 +93,47 @@ def init_db():
 
 init_db()
 
+from discord.ext import tasks
+
+# Фоновая задача для автоматической отправки новых логов
+@tasks.loop(seconds=30)
+async def auto_send_logs():
+    if not LOG_BUFFER:
+        return
+    
+    try:
+        conn = sqlite3.connect("economy.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key LIKE 'log_channel_%'")
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            return
+
+        # Берем последние логи из буфера, которые еще не отправлялись
+        logs_to_send = "\n".join(LOG_BUFFER)
+        LOG_BUFFER.clear() # Очищаем буфер после отправки
+
+        if len(logs_to_send) > 1900:
+            logs_to_send = logs_to_send[-1900:]
+
+        for row in rows:
+            channel_id = int(row[0])
+            channel = bot.get_channel(channel_id)
+            if channel:
+                await channel.send(f"🖥️ **Авто-логи:**\n```py\n{logs_to_send}\n```")
+    except Exception:
+        pass
+
+@auto_send_logs.before_loop
+async def before_auto_send_logs():
+    await bot.wait_until_ready()
+
+# Запускаем задачу при старте бота (например, в событии on_ready или прямо здесь)
+# auto_send_logs.start()
+
+
 # ---------------------------------------------------------
 # 2. Настройки Intents и Инициализация
 # ---------------------------------------------------------
