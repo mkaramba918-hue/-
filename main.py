@@ -1112,21 +1112,17 @@ async def on_raw_message_bulk_delete(payload):
 
 @bot.event
 async def on_message(message):
-    # Игнорируем сообщения самого бота
     if message.author.bot:
         return
 
-    # Не логируем сообщения из самого канала логов
     if message.channel.id == LOG_CHANNEL_ID:
         await bot.process_commands(message)
         return
 
     log_channel = message.guild.get_channel(LOG_CHANNEL_ID)
     if log_channel:
-        # Собираем текст сообщения
         content_text = message.content if message.content else "*[Текста нет]*"
         
-        # Информация об авторе и канале
         log_text = (
             f"💬 **Новое сообщение**\n"
             f"• **Автор:** {message.author.mention} (`{message.author.id}`)\n"
@@ -1134,29 +1130,32 @@ async def on_message(message):
             f"• **Текст:** {content_text}"
         )
 
-        # Обработка стикеров (если есть)
-        if message.stickers:
-            sticker_names = ", ".join([s.name for s in message.stickers])
-            log_text += f"\n• **Стикер(ы):** `{sticker_names}`"
-
-        # Обработка картинок и файлов (если прикреплены)
+        # Обработка стикеров (берем картинку стикера по его URL)
         files_to_send = []
+        if message.stickers:
+            for sticker in message.stickers:
+                try:
+                    # Скачиваем стикер как файл, чтобы отправить картинкой
+                    file = await sticker.to_file()
+                    files_to_send.append(file)
+                except Exception:
+                    # Если не получилось скачать, хотя бы напишем название
+                    log_text += f"\n• **Стикер:** `{sticker.name}`"
+
+        # Обработка картинок и обычных файлов
         if message.attachments:
             for attachment in message.attachments:
                 try:
-                    # Скачиваем файл/картинку, чтобы бот мог переслать ее в лог
                     file = await attachment.to_file()
                     files_to_send.append(file)
                 except Exception:
                     pass
 
-        # Отправляем лог вместе с картинками/файлами (если они были)
         if files_to_send:
             await log_channel.send(log_text, files=files_to_send)
         else:
             await log_channel.send(log_text)
 
-    # Обязательно для работы остальных команд бота (!help, /clear и т.д.)
     await bot.process_commands(message)
     
 # --- Запуск бота ---
