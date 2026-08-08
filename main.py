@@ -790,6 +790,7 @@ async def add_money(ctx, member: discord.Member, amount: int):
     
     await ctx.send(f"Успешно выдано **{amount}** монет пользователю {member.mention}! (Баланс: {user_balances[member.id]})")
 
+# --- 1. Обработчик системных логов Python ---
 class DiscordLogHandler(logging.Handler):
 
     def __init__(self, bot, channel_id: int):
@@ -812,24 +813,11 @@ class DiscordLogHandler(logging.Handler):
             except Exception as e:
                 print(f"Ошибка отправки лога: {e}")
 
-app = Flask("")
 
-@app.route("/")
-def home():
-    return "Bot is alive and running 24/7!"
-
-def run_web():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
-
-def keep_alive():
-    t = Thread(target=run_web)
-    t.start()
-
-LOG_BUFFER = []
-MAX_BUFFER_SIZE = 25
-
+# --- ID канала для логов ---
 LOG_CHANNEL_ID = 1535375319517626448
+
+# Подключение системного обработчика к логированию
 if not any(
     isinstance(h, DiscordLogHandler) for h in logging.getLogger().handlers
 ):
@@ -841,6 +829,61 @@ if not any(
     )
     logging.getLogger().addHandler(handler)
     logging.getLogger().setLevel(logging.INFO)
+
+
+# --- 2. Событийные логи (действия пользователей) ---
+@bot.event
+async def on_message_delete(message):
+    if message.author.bot:
+        return
+    channel = bot.get_channel(LOG_CHANNEL_ID)
+    if channel:
+        await channel.send(
+            f"🗑️ **Сообщение удалено** | В канале {message.channel.mention}\nАвтор: {message.author.mention}\nТекст: {message.content}"
+        )
+
+
+@bot.event
+async def on_message_edit(before, after):
+    if before.author.bot or before.content == after.content:
+        return
+    channel = bot.get_channel(LOG_CHANNEL_ID)
+    if channel:
+        await channel.send(
+            f"✏️ **Сообщение изменено** | В канале {before.channel.mention}\nАвтор: {before.author.mention}\nБыло: {before.content}\nСтало: {after.content}"
+        )
+
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    if member.bot:
+        return
+    channel = bot.get_channel(LOG_CHANNEL_ID)
+    if not channel:
+        return
+
+    if before.channel is None and after.channel is not None:
+        await channel.send(
+            f"🔊 **{member.name}** вошел в голосовой канал **{after.channel.name}**"
+        )
+    elif before.channel is not None and after.channel is None:
+        await channel.send(
+            f"🔇 **{member.name}** вышел из голосового канала **{before.channel.name}**"
+        )
+    elif before.channel != after.channel:
+        await channel.send(
+            f"🔀 **{member.name}** переместился: **{before.channel.name}** ➡️ **{after.channel.name}**"
+        )
+
+
+@bot.event
+async def on_member_ban(guild, user):
+    channel = bot.get_channel(LOG_CHANNEL_ID)
+    if channel:
+        await channel.send(
+            f"🚫 **Участник забанен:** {user.name} (ID: {user.id})"
+        )
+        
 
 # --- Запуск бота ---
 
