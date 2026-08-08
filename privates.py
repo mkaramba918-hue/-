@@ -1,4 +1,4 @@
-i discord
+import discord
 from discord.ext import commands
 
 # Хранилище активных приваток: {voice_channel_id: owner_id}
