@@ -16,11 +16,11 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
 class DiscordLogHandler(logging.Handler):
 
-def __init__(self, bot, channel_id: int):
-    super().__init__()
-    self.bot = bot
-    self.channel_id = channel_id
-
+    def __init__(self, bot, channel_id: int):
+        super().__init__()
+        self.bot = bot
+        self.channel_id = channel_id
+        
   def emit(self, record):
     log_entry = self.format(record)
     self.bot.loop.create_task(self.send_log(log_entry))
