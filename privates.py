@@ -1,4 +1,4 @@
-import discord
+i discord
 from discord.ext import commands
 
 # Хранилище активных приваток: {voice_channel_id: owner_id}
@@ -123,19 +123,7 @@ class PrivatesCog(commands.Cog):
         except:
             pass
 
-# 6. Событие автоматического удаления пустых комнат при выходе
-async def on_voice_state_update(member, before, after):
-    if before.channel and before.channel.id in active_private_channels:
-        if len(before.channel.members) == 0:
-            channel_id = before.channel.id
-            try:
-                if channel_id in active_private_channels:
-                    del active_private_channels[channel_id]
-                await before.channel.delete()
-            except Exception as e:
-                print(f"Ошибка при удалении пустой приватки: {e}")
-
+# 6. Событие автоматического удаления пустых комнат при выходвы#
 async def setup(bot):
     await bot.add_cog(PrivatesCog(bot))
-    bot.add_listener(on_voice_state_update, "on_voice_state_update")
-        
+    
