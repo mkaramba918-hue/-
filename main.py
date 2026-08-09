@@ -1293,6 +1293,27 @@ async def stop(interaction: discord.Interaction):
     else:
         await interaction.response.send_message("❌ Бот не находится в голосовом канале.")
         
+# --- ДОБАВЬТЕ ЭТО В КОНЕЦ main.py ---
+
+@bot.tree.command(name="warn", description="Выдать предупреждение")
+async def warn(interaction: discord.Interaction, member: discord.Member, reason: str = "Не указана"):
+    current_warns = update_warns(member.id, 1)
+    # ... логика выдачи ролей ...
+    await interaction.response.send_message(f"Пользователь {member.mention} получил варн. Всего: {current_warns}/3")
+
+@bot.tree.command(name="unwarn", description="Снять варн")
+async def unwarn(interaction: discord.Interaction, member: discord.Member):
+    current_warns = update_warns(member.id, -1)
+    await interaction.response.send_message(f"С пользователя {member.mention} снят варн. Всего: {current_warns}/3")
+
+@bot.tree.command(name="unban", description="Разбанить пользователя")
+async def unban(interaction: discord.Interaction, user_id: str):
+    user = await bot.fetch_user(int(user_id))
+    await interaction.guild.unban(user)
+    await interaction.response.send_message(f"Пользователь {user.name} разбанен.")
+
+# ------------------------------------
+
 
 # --- Запуск бота ---
 
