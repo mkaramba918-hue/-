@@ -1422,7 +1422,7 @@ async def mutes_list(interaction: discord.Interaction):
     embed.description = description
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="mute", description="Замутить пользователя и выдать роль")
+@bot.tree.command(name="mute_user", description="Замутить пользователя и выдать роль")
 @app_commands.default_permissions(moderate_members=True)
 async def mute(interaction: discord.Interaction, member: discord.Member, minutes: int, reason: str = "Не указана"):
     # 1. Выдаем роль
