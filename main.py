@@ -1309,7 +1309,11 @@ async def warn(interaction: discord.Interaction, member: discord.Member, reason:
                 await member.add_roles(role)
             elif role in member.roles:
                 await member.remove_roles(role)
-
+    # ... ваша текущая логика выдачи варна ...
+    
+    # Вызываем наш эвент логирования
+    bot.dispatch("warn_action", interaction.guild, "⚠️ Выдан варн", member, interaction.user, reason, new_count)
+    
     await interaction.response.send_message(f"⚠️ {member.mention} получил варн ({new_count}/3).")
 
     # Авто-бан на 30 дней, если 3 варна
@@ -1318,18 +1322,45 @@ async def warn(interaction: discord.Interaction, member: discord.Member, reason:
         await interaction.followup.send(f"🚫 {member.mention} забанен на 30 дней за 3 варна.")
         # Чтобы разбанить через 30 дней, используйте бота, который запущен 24/7 (как у вас)
         # Иначе разбан придется делать вручную командой /unban
+    # Вызываем отдельный эвент бана
+        bot.dispatch("auto_ban", interaction.guild, member, new_count)
 
 @bot.tree.command(name="unwarn", description="Снять варн")
 async def unwarn(interaction: discord.Interaction, member: discord.Member):
     current_warns = update_warns(member.id, -1)
     await interaction.response.send_message(f"С пользователя {member.mention} снят варн. Всего: {current_warns}/3")
-
+    # ... ваша текущая логика снятия варна ...
+    
+    # Вызываем наш эвент логирования
+    bot.dispatch("warn_action", interaction.guild, "✅ Снят варн", member, interaction.user, "Снятие варна", new_count)
+    
 @bot.tree.command(name="unban", description="Разбанить пользователя")
 async def unban(interaction: discord.Interaction, user_id: str):
     user = await bot.fetch_user(int(user_id))
     await interaction.guild.unban(user)
     await interaction.response.send_message(f"Пользователь {user.name} разбанен.")
 
+@bot.event
+async def on_warn_action(guild, title, member, moderator, reason, count):
+    """Кастомный эвент для отправки логов варнов"""
+    channel = guild.get_channel(LOG_CHANNEL_ID)
+    if channel:
+        embed = discord.Embed(title=title, color=discord.Color.gold())
+        embed.add_field(name="Пользователь", value=member.mention, inline=True)
+        embed.add_field(name="Модератор", value=moderator.mention, inline=True)
+        embed.add_field(name="Причина", value=reason, inline=False)
+        embed.add_field(name="Всего варнов", value=f"{count}/3", inline=True)
+        await channel.send(embed=embed)
+
+@bot.event
+async def on_auto_ban(guild, member, count):
+    channel = guild.get_channel(LOG_CHANNEL_ID)
+    if channel:
+        embed = discord.Embed(title="🚫 Автоматический бан", color=discord.Color.red())
+        embed.add_field(name="Пользователь", value=member.mention, inline=True)
+        embed.add_field(name="Причина", value=f"Достигнуто {count}/3 варнов", inline=False)
+        await channel.send(embed=embed)
+        
 # ------------------------------------
 
 
