@@ -1358,7 +1358,7 @@ async def unwarn(interaction: discord.Interaction, member: discord.Member):
 
     await interaction.response.send_message(f"С пользователя {member.mention} снят варн. Всего: {new_count}/3.")
     
-@bot.tree.command(name="unban_user", description="Разбанить пользователя по его ID")
+@bot.tree.command(name="unban", description="Разбанить пользователя по его ID")
 @app_commands.default_permissions(ban_members=True)
 async def unban(interaction: discord.Interaction, user_id: str, reason: str = "Не указана"):
     try:
@@ -1380,20 +1380,6 @@ async def unban(interaction: discord.Interaction, user_id: str, reason: str = "�
         return
 
     # 2. Отправляем лог в канал с указанием реального модератора
-    log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-    if log_channel:
-        embed = discord.Embed(title="🔓 Пользователь разбанен", color=discord.Color.blue())
-        embed.add_field(name="Пользователь", value=f"{user.mention} (`{user.id}`)", inline=False)
-        embed.add_field(name="Разбанил", value=interaction.user.mention, inline=False)
-        embed.add_field(name="Причина", value=reason, inline=False)
-        await log_channel.send(embed=embed)
-
-    # 3. Отправляем уведомление пользователю в ЛС (без причины)
-    try:
-        await user.send(f"🔓 Вы были разбанены на сервере **{interaction.guild.name}**.")
-    except discord.Forbidden:
-        pass
-
     await interaction.response.send_message(
         f"🔓 Пользователь {user.mention} успешно разбанен.", 
         ephemeral=True
