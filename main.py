@@ -1316,15 +1316,26 @@ async def warn(interaction: discord.Interaction, member: discord.Member, reason:
     
     await interaction.response.send_message(f"⚠️ {member.mention} получил варн ({new_count}/3).")
 
-    # Авто-бан на 30 дней, если 3 варна
+    # Авто-бан при достижении 3 варнов
+    if new_count >= 3:
+        # Сбрасываем варны в базе данных до 0
+        cursor.execute("UPDATE warns SET count = 0 WHERE user_id = ?", (user_id,))
+        conn.commit()
+
+        # Снимаем все варн-роли перед баном
+        for role_id in WARN_ROLES.values():
+            role = interaction.guild.get_role(role_id)
+            if role and role in member.roles:
+                await member.remove_roles(role)
+        # Авто-бан на 30 дней, если 3 варна
     if new_count >= 3:
         await member.ban(reason="Автоматический бан за 3 варна")
         await interaction.followup.send(f"🚫 {member.mention} забанен на 30 дней за 3 варна.")
         # Чтобы разбанить через 30 дней, используйте бота, который запущен 24/7 (как у вас)
         # Иначе разбан придется делать вручную командой /unban
-    # Вызываем отдельный эвент бана
+        # Вызываем лог авто-бана
         bot.dispatch("auto_ban", interaction.guild, member, new_count)
-
+        
 @bot.tree.command(name="unwarn", description="Снять варн")
 async def unwarn(interaction: discord.Interaction, member: discord.Member):
     # 1. Уменьшаем количество варнов в базе данных
@@ -1374,7 +1385,58 @@ async def on_auto_ban(guild, member, count):
         embed.add_field(name="Пользователь", value=member.mention, inline=True)
         embed.add_field(name="Причина", value=f"Достигнуто {count}/3 варнов", inline=False)
         await channel.send(embed=embed)
-        
+
+@bot.tree.command(name="warns_list", description="Показать список всех пользователей с варнами")
+@app_commands.default_permissions(manage_roles=True)
+async def warns_list(interaction: discord.Interaction):
+    cursor.execute("SELECT user_id, count FROM warns WHERE count > 0")
+    rows = cursor.fetchall()
+    
+    if not rows:
+        await interaction.response.send_message("На сервере нет пользователей с активными варнами.", ephemeral=True)
+        return
+
+    embed = discord.Embed(title="⚠️ Список варнов на сервере", color=discord.Color.gold())
+    description = ""
+    for user_id, count in rows:
+        description += f"<@{user_id}> — **{count}/3** варнов\n"
+    
+    embed.description = description
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="bans_list", description="Показать список всех забаненных пользователей")
+@app_commands.default_permissions(ban_members=True)
+async def bans_list(interaction: discord.Interaction):
+    embed = discord.Embed(title="🚫 Список банов сервера", color=discord.Color.red())
+    description = ""
+    
+    async for entry in interaction.guild.bans(limit=20): # Ограничим первыми 20, чтобы не превысить лимиты Discord
+        description += f"• **{entry.user}** (ID: `{entry.user.id}`) — Причина: *{entry.reason or 'Не указана'}*\n"
+    
+    if not description:
+        description = "Список банов пуст."
+
+    embed.description = description
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="mutes_list", description="Показать список всех заглушенных (timeout) пользователей")
+@app_commands.default_permissions(moderate_members=True)
+async def mutes_list(interaction: discord.Interaction):
+    embed = discord.Embed(title="🔇 Список мутов на сервере", color=discord.Color.dark_grey())
+    description = ""
+    
+    now = discord.utils.utcnow()
+    for member in interaction.guild.members:
+        # Проверяем, есть ли у участника активный таймаут
+        if member.timed_out_until and member.timed_out_until > now:
+            description += f"• {member.mention} — до {member.timed_out_until.strftime('%d.%m.%Y %H:%M')}\n"
+            
+    if not description:
+        description = "Активных мутов на сервере нет."
+
+    embed.description = description
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    
 # ------------------------------------
 
 
