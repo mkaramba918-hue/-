@@ -1295,11 +1295,29 @@ async def stop(interaction: discord.Interaction):
         
 # --- ДОБАВЬТЕ ЭТО В КОНЕЦ main.py ---
 
-@bot.tree.command(name="warn", description="Выдать предупреждение")
+@bot.tree.command(name="warn", description="Выдать варн")
+@app_commands.default_permissions(manage_roles=True)
 async def warn(interaction: discord.Interaction, member: discord.Member, reason: str = "Не указана"):
-    current_warns = update_warns(member.id, 1)
-    # ... логика выдачи ролей ...
-    await interaction.response.send_message(f"Пользователь {member.mention} получил варн. Всего: {current_warns}/3")
+    user_id = member.id
+    new_count = update_warns(user_id, 1)
+
+    # Логика выдачи ролей
+    for level, role_id in WARN_ROLES.items():
+        role = interaction.guild.get_role(role_id)
+        if role:
+            if level == new_count:
+                await member.add_roles(role)
+            elif role in member.roles:
+                await member.remove_roles(role)
+
+    await interaction.response.send_message(f"⚠️ {member.mention} получил варн ({new_count}/3).")
+
+    # Авто-бан на 30 дней, если 3 варна
+    if new_count >= 3:
+        await member.ban(reason="Автоматический бан за 3 варна")
+        await interaction.followup.send(f"🚫 {member.mention} забанен на 30 дней за 3 варна.")
+        # Чтобы разбанить через 30 дней, используйте бота, который запущен 24/7 (как у вас)
+        # Иначе разбан придется делать вручную командой /unban
 
 @bot.tree.command(name="unwarn", description="Снять варн")
 async def unwarn(interaction: discord.Interaction, member: discord.Member):
