@@ -1354,12 +1354,47 @@ async def unwarn(interaction: discord.Interaction, member: discord.Member):
 
     await interaction.response.send_message(f"С пользователя {member.mention} снят варн. Всего: {new_count}/3.")
     
+@bot.tree.command(name="unban_user", description="Разбанить пользователя по его ID")
+@app_commands.default_permissions(ban_members=True)
+async def unban(interaction: discord.Interaction, user_id: str, reason: str = "Не указана"):
+    try:
+        # Превращаем ID в число
+        uid = int(user_id)
+        user = await bot.fetch_user(uid)
+    except ValueError:
+        await interaction.response.send_message("❌ Указан некорректный ID пользователя.", ephemeral=True)
+        return
+    except discord.NotFound:
+        await interaction.response.send_message("❌ Пользователь с таким ID не найден в Discord.", ephemeral=True)
+        return
 
-@bot.tree.command(name="unban", description="Разбанить пользователя")
-async def unban(interaction: discord.Interaction, user_id: str):
-    user = await bot.fetch_user(int(user_id))
-    await interaction.guild.unban(user)
-    await interaction.response.send_message(f"Пользователь {user.name} разбанен.")
+    try:
+        # 1. Снимаем бан с помощью гильдии
+        await interaction.guild.unban(user, reason=reason)
+    except discord.HTTPException:
+        await interaction.response.send_message("❌ Не удалось разбанить пользователя. Возможно, он не забанен.", ephemeral=True)
+        return
+
+    # 2. Отправляем лог в канал с указанием реального модератора
+    log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+    if log_channel:
+        embed = discord.Embed(title="🔓 Пользователь разбанен", color=discord.Color.blue())
+        embed.add_field(name="Пользователь", value=f"{user.mention} (`{user.id}`)", inline=False)
+        embed.add_field(name="Разбанил", value=interaction.user.mention, inline=False)
+        embed.add_field(name="Причина", value=reason, inline=False)
+        await log_channel.send(embed=embed)
+
+    # 3. Отправляем уведомление пользователю в ЛС (без причины)
+    try:
+        await user.send(f"🔓 Вы были разбанены на сервере **{interaction.guild.name}**.")
+    except discord.Forbidden:
+        pass
+
+    await interaction.response.send_message(
+        f"🔓 Пользователь {user.mention} успешно разбанен.", 
+        ephemeral=True
+    )
+    
 
 @bot.event
 async def on_warn_action(guild, title, member, moderator, reason, count):
