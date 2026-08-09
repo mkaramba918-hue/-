@@ -428,21 +428,31 @@ async def getlogs_slash(interaction: discord.Interaction):
 # ---------------------------------------------------------
 # 6. СЛЭШ-КОМАНДЫ ДОЛЖНОСТЕЙ И МОДЕРАЦИИ
 # ---------------------------------------------------------
-@bot.tree.command(name="unmute", description="Снять мут и забрать роль")
+@bot.tree.command(name="unmute_user", description="Снять мут и забрать роль мута с пользователя")
 @app_commands.default_permissions(moderate_members=True)
-async def unmute(interaction: discord.Interaction, member: discord.Member, reason: str = "Снятие мута"):
-    # 1. Убираем роль
+async def unmute(interaction: discord.Interaction, member: discord.Member, reason: str = "Не указана"):
+    # 1. Забираем роль мута
     mute_role = interaction.guild.get_role(MUTE_ROLE_ID)
     if mute_role and mute_role in member.roles:
-        await member.remove_roles(mute_role, reason=reason)
-        
-    # 2. Снимаем таймаут
+        await member.remove_roles(mute_role, reason=f"Снятие мута: {reason}")
+    
+    # 2. Снимаем таймаут (передаем None)
     await member.timeout(None, reason=reason)
     
+    # 3. Отправляем лог в канал с указанием реального модератора
+    log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+    if log_channel:
+        embed = discord.Embed(title="🔊 Снят мут", color=discord.Color.green())
+        embed.add_field(name="Пользователь", value=f"{member.mention} (`{member.id}`)", inline=False)
+        embed.add_field(name="Снял мут", value=interaction.user.mention, inline=False) # <--- Реальный человек
+        embed.add_field(name="Причина", value=reason, inline=False)
+        await log_channel.send(embed=embed)
+
     await interaction.response.send_message(
-        f"✅ С пользователя {member.mention} снят мут и убрана роль.", 
-        ephemeral=False
+        f"🔊 С пользователя {member.mention} снят мут и возвращена нормальная роль.", 
+        ephemeral=True
     )
+    
     
 
 @bot.tree.command(name="gmod", description="Назначить Главного модератора")
@@ -580,7 +590,7 @@ async def ban(interaction: discord.Interaction, member: discord.Member, days: in
     except discord.Forbidden:
         pass
 
-    del_days = min(days, 7) if days > 0 else 0
+    del_days = min(days, 30) if days > 0 else 0
     await member.ban(reason=reason, delete_message_days=del_days)
     await interaction.response.send_message(f"⛔️ Участник **{member.name}** забанен. Причина: {reason}")
   
