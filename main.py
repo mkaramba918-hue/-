@@ -582,7 +582,7 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
 @app_commands.default_permissions(ban_members=True)
 async def ban(interaction: discord.Interaction, member: discord.Member, days: int = 0, reason: str = "Не указана"):
     # Формируем текст срока для причины и логов
-    duration_text = f"на {days} дн." if days > 0 "навсегда"
+    duration_text = f"на {days} дн." if days > 0 else "навсегда"
     full_reason = f"Срок: {duration_text} | Причина: {reason}"
 
     # 1. Отправляем уведомление в ЛС забаненному (до бана, пока доступен)
