@@ -1327,13 +1327,27 @@ async def warn(interaction: discord.Interaction, member: discord.Member, reason:
 
 @bot.tree.command(name="unwarn", description="Снять варн")
 async def unwarn(interaction: discord.Interaction, member: discord.Member):
-    current_warns = update_warns(member.id, -1)
-    await interaction.response.send_message(f"С пользователя {member.mention} снят варн. Всего: {current_warns}/3")
-    # ... ваша текущая логика снятия варна ...
+    # 1. Уменьшаем количество варнов в базе данных
+    new_count = update_warns(member.id, -1)
     
-    # Вызываем наш эвент логирования
+    # 2. ПРОХОДИМСЯ ПО ВСЕМ РОЛЯМ И СНИМАЕМ ИХ
+    for role_id in WARN_ROLES.values():
+        role = interaction.guild.get_role(role_id)
+        if role and role in member.roles:
+            await member.remove_roles(role)
+            
+    # Если нужно вернуть роль за оставшееся количество (например, осталось 2 варна вместо 3):
+    if new_count > 0 and new_count in WARN_ROLES:
+        role_to_give = interaction.guild.get_role(WARN_ROLES[new_count])
+        if role_to_give:
+            await member.add_roles(role_to_give)
+
+    # Отправляем лог через ваш эвент
     bot.dispatch("warn_action", interaction.guild, "✅ Снят варн", member, interaction.user, "Снятие варна", new_count)
+
+    await interaction.response.send_message(f"С пользователя {member.mention} снят варн. Всего: {new_count}/3.")
     
+
 @bot.tree.command(name="unban", description="Разбанить пользователя")
 async def unban(interaction: discord.Interaction, user_id: str):
     user = await bot.fetch_user(int(user_id))
