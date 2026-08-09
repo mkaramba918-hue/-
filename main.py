@@ -1430,8 +1430,8 @@ async def mute(interaction: discord.Interaction, member: discord.Member, minutes
     if mute_role:
         await member.add_roles(mute_role, reason=f"Мут: {reason}")
     
-    # 2. Устанавливаем таймаут
-    duration = discord.utils.utcnow() + discord.timedelta(minutes=minutes)
+    # 2. Устанавливаем таймаут (используем datetime.timedelta вместо discord.timedelta)
+    duration = discord.utils.utcnow() + datetime.timedelta(minutes=minutes)
     await member.timeout(duration, reason=reason)
     
     await interaction.response.send_message(
