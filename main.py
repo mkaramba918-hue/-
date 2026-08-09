@@ -979,23 +979,36 @@ async def on_voice_state_update(member, before, after):
 @bot.event
 async def on_member_unban(guild, user):
     channel = guild.get_channel(LOG_CHANNEL_ID)
-    if not channel:
-        return
-
+    
     moderator = "Неизвестно"
+    reason = "Не указана"
+
     try:
-        async for entry in guild.audit_logs(limit=3, action=discord.AuditLogAction.unban):
+        async for entry in guild.audit_logs(limit=5, action=discord.AuditLogAction.unban):
             if entry.target.id == user.id:
                 moderator = entry.user.mention
+                reason = entry.reason or "Не указана"
                 break
     except Exception:
         pass
 
-    await channel.send(
-        f"✅ **Участник разбанен**\n"
-        f"• **Пользователь:** {user.mention} (`{user.id}`)\n"
-        f"• **Забанил:** {interaction.user.mention}\n"
-    )
+    # 1. Отправляем ЛС пользователю (используем guild.name)
+    try:
+        await user.send(f"🔓 Вы были разбанены на сервере **{guild.name}**.")
+    except discord.Forbidden:
+        print(f"⚠️ ЛС закрыто у пользователя {user.name}")
+    except Exception as e:
+        print(f"❌ Ошибка отправки ЛС при разбане: {e}")
+
+    # 2. Отправляем лог в канал
+    if channel:
+        await channel.send(
+            f"🔓 **Участник разбанен**\n"
+            f"• **Пользователь:** {user.mention} (`{user.id}`)\n"
+            f"• **Разбанил:** {moderator}\n"
+            f"• **Причина:** {reason}"
+        )
+        
 
 
 @bot.event
