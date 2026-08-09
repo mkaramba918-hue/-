@@ -578,7 +578,7 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
     await member.kick(reason=reason)
     await interaction.response.send_message(f"🚪 Участник **{member.name}** кикнут. Причина: {reason}")
 
-@bot.tree.command(name="ban", description="Забанить пользователя на сервере")
+@bot.tree.command(name="ban_user", description="Забанить пользователя на сервере")
 @app_commands.default_permissions(ban_members=True)
 async def ban(interaction: discord.Interaction, member: discord.Member, days: int = 0, reason: str = "Не указана"):
     # Формируем текст срока для причины и логов
@@ -1358,7 +1358,7 @@ async def unwarn(interaction: discord.Interaction, member: discord.Member):
 
     await interaction.response.send_message(f"С пользователя {member.mention} снят варн. Всего: {new_count}/3.")
     
-@bot.tree.command(name="unban", description="Разбанить пользователя по его ID")
+@bot.tree.command(name="unban_user", description="Разбанить пользователя по его ID")
 @app_commands.default_permissions(ban_members=True)
 async def unban(interaction: discord.Interaction, user_id: str, reason: str = "Не указана"):
     try:
