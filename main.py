@@ -578,22 +578,37 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
     await member.kick(reason=reason)
     await interaction.response.send_message(f"🚪 Участник **{member.name}** кикнут. Причина: {reason}")
 
-@bot.tree.command(name="ban", description="Забанить участника на сервере")
-@app_commands.describe(member="Участник", days="Количество дней удаления сообщений (0-7)", reason="Причина бана")
-@app_commands.checks.has_permissions(ban_members=True)
-async def ban(interaction: discord.Interaction, member: discord.Member, days: int = 0, reason: str = "Причина не указана"):
+@bot.tree.command(name="ban", description="Забанить пользователя на сервере")
+@app_commands.default_permissions(ban_members=True)
+async def ban(interaction: discord.Interaction, member: discord.Member, days: int = 0, reason: str = "Не указана"):
+    # Формируем текст срока для причины и логов
+    duration_text = f"на {days} дн." if days > 0 "навсегда"
+    full_reason = f"Срок: {duration_text} | Причина: {reason}"
+
+    # 1. Отправляем уведомление в ЛС забаненному (до бана, пока доступен)
     try:
-        if days > 0:
-            await member.send(f"⛔️ Вы были забанены на сервере **{interaction.guild.name}**. Причина: {reason}")
-        else:
-            await member.send(f"⛔️ Вы были забанены на сервере **{interaction.guild.name}** навсегда. Причина: {reason}")
+        await member.send(f"🚫 Вы были забанены на сервере **{interaction.guild.name}** ({duration_text}).\n• Причина: {reason}")
     except discord.Forbidden:
         pass
 
-    del_days = min(days, 30) if days > 0 else 0
-    await member.ban(reason=reason, delete_message_days=del_days)
-    await interaction.response.send_message(f"⛔️ Участник **{member.name}** забанен. Причина: {reason}")
-  
+    # 2. Баним пользователя
+    await member.ban(reason=full_reason)
+
+    # 3. Отправляем лог в канал
+    log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+    if log_channel:
+        embed = discord.Embed(title="🚫 Бан участника", color=discord.Color.red())
+        embed.add_field(name="Пользователь", value=f"{member.mention} (`{member.id}`)", inline=False)
+        embed.add_field(name="Забанил", value=interaction.user.mention, inline=False)
+        embed.add_field(name="Срок", value=duration_text, inline=False)
+        embed.add_field(name="Причина", value=reason, inline=False)
+        await log_channel.send(embed=embed)
+
+    await interaction.response.send_message(
+        f"✅ Пользователь {member.mention} успешно забанен ({duration_text}).", 
+        ephemeral=True
+    )
+    
 
     
 # ---------------------------------------------------------
@@ -960,35 +975,6 @@ async def on_voice_state_update(member, before, after):
         await channel.send(
             f"🔀 **Перемещение в войсе**\n• **Участник:** {member.mention}\n• **Маршрут:** **{before.channel.name}** ➡️ **{after.channel.name}**"
         )
-
-@bot.event
-async def on_member_ban(guild, user):
-    channel = guild.get_channel(LOG_CHANNEL_ID)
-    if not channel:
-        return
-
-    moderator = "Неизвестно"
-    reason = "Не указана"
-
-    try:
-        # Опрашиваем аудит-логи сервера, чтобы найти, кто забанил
-        async for entry in guild.audit_logs(limit=5, action=discord.AuditLogAction.ban):
-            if entry.target.id == user.id:
-                moderator = entry.user.mention
-                reason = entry.reason or "Не указана"
-                break
-    except Exception:
-        pass
-
-    # Отправка лога с указанием реального человека (администратора)
-    await channel.send(
-        f"🚫 **Участник забанен**\n"
-        f"• **Пользователь:** {user.mention} (`{user.id}`)\n"
-        f"• **Забанил:** {moderator}\n"
-        f"• **Причина:** {reason}"
-    )
-    
-
 
 @bot.event
 async def on_member_unban(guild, user):
