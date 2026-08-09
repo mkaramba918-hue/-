@@ -976,40 +976,6 @@ async def on_voice_state_update(member, before, after):
             f"🔀 **Перемещение в войсе**\n• **Участник:** {member.mention}\n• **Маршрут:** **{before.channel.name}** ➡️ **{after.channel.name}**"
         )
 
-@bot.event
-async def on_member_unban(guild, user):
-    channel = guild.get_channel(LOG_CHANNEL_ID)
-    
-    moderator = "Неизвестно"
-    reason = "Не указана"
-
-    try:
-        async for entry in guild.audit_logs(limit=5, action=discord.AuditLogAction.unban):
-            if entry.target.id == user.id:
-                moderator = entry.user.mention
-                reason = entry.reason or "Не указана"
-                break
-    except Exception:
-        pass
-
-    # 1. Отправляем ЛС пользователю (используем guild.name)
-    try:
-        await user.send(f"🔓 Вы были разбанены на сервере **{guild.name}**.")
-    except discord.Forbidden:
-        print(f"⚠️ ЛС закрыто у пользователя {user.name}")
-    except Exception as e:
-        print(f"❌ Ошибка отправки ЛС при разбане: {e}")
-
-    # 2. Отправляем лог в канал
-    if channel:
-        await channel.send(
-            f"🔓 **Участник разбанен**\n"
-            f"• **Пользователь:** {user.mention} (`{user.id}`)\n"
-            f"• **Разбанил:** {moderator}\n"
-            f"• **Причина:** {reason}"
-        )
-        
-
 
 @bot.event
 async def on_member_join(member):
@@ -1372,14 +1338,28 @@ async def unban(interaction: discord.Interaction, user_id: str, reason: str = "�
         await interaction.response.send_message("❌ Пользователь с таким ID не найден в Discord.", ephemeral=True)
         return
 
+    # 1. СНАЧАЛА отправляем уведомление в ЛС разбаненному (без причины)
     try:
-        # 1. Снимаем бан с помощью гильдии
+        await user.send(f"🔓 Вы были разбанены на сервере **{interaction.guild.name}**.")
+    except discord.Forbidden:
+        pass # Если ЛС закрыты, просто пропускаем
+
+    try:
+        # 2. Снимаем бан с помощью гильдии
         await interaction.guild.unban(user, reason=reason)
     except discord.HTTPException:
         await interaction.response.send_message("❌ Не удалось разбанить пользователя. Возможно, он не забанен.", ephemeral=True)
         return
 
-    # 2. Отправляем лог в канал с указанием реального модератора
+    # 3. Отправляем лог в канал с указанием реального модератора
+    log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+    if log_channel:
+        embed = discord.Embed(title="🔓 Пользователь разбанен", color=discord.Color.blue())
+        embed.add_field(name="Пользователь", value=f"{user.mention} (`{user.id}`)", inline=False)
+        embed.add_field(name="Разбанил", value=interaction.user.mention, inline=False)
+        embed.add_field(name="Причина", value=reason, inline=False)
+        await log_channel.send(embed=embed)
+
     await interaction.response.send_message(
         f"🔓 Пользователь {user.mention} успешно разбанен.", 
         ephemeral=True
