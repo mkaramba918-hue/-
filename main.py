@@ -578,16 +578,17 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
     await member.kick(reason=reason)
     await interaction.response.send_message(f"🚪 Участник **{member.name}** кикнут. Причина: {reason}")
 
-@bot.tree.command(name="ban_user", description="Забанить пользователя на сервере")
+@bot.tree.command(name="ban_user", description="Забанить участника на сервере")
+@app_commands.describe(member="Участник", days="Срок бана в днях (0 - навсегда)", reason="Причина бана")
 @app_commands.default_permissions(ban_members=True)
 async def ban(interaction: discord.Interaction, member: discord.Member, days: int = 0, reason: str = "Не указана"):
     # Формируем текст срока для причины и логов
     duration_text = f"на {days} дн." if days > 0 else "навсегда"
     full_reason = f"Срок: {duration_text} | Причина: {reason}"
 
-    # 1. Отправляем уведомление в ЛС забаненному (до бана, пока доступен)
+    # 1. Отправляем уведомление в ЛС забаненному (до бана)
     try:
-        await member.send(f"🚫 Вы были забанены на сервере **{interaction.guild.name}** ({duration_text}).\n• Причина: {reason}")
+        await member.send(f"⛔️ Вы были забанены на сервере **{interaction.guild.name}** ({duration_text}).\n• Причина: {reason}")
     except discord.Forbidden:
         pass
 
@@ -605,11 +606,10 @@ async def ban(interaction: discord.Interaction, member: discord.Member, days: in
         await log_channel.send(embed=embed)
 
     await interaction.response.send_message(
-        f"✅ Пользователь {member.mention} успешно забанен ({duration_text}).", 
+        f"⛔️ Пользователь {member.mention} успешно забанен ({duration_text}).", 
         ephemeral=True
     )
     
-
     
 # ---------------------------------------------------------
 # ЗАПУСК БОТА И WEB-СЕРВЕРА
