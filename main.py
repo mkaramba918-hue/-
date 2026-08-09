@@ -584,22 +584,7 @@ async def ban(interaction: discord.Interaction, member: discord.Member, days: in
     await member.ban(reason=reason, delete_message_days=del_days)
     await interaction.response.send_message(f"⛔️ Участник **{member.name}** забанен. Причина: {reason}")
   
-@bot.tree.command(name="mute", description="Замутить пользователя и выдать роль")
-@app_commands.default_permissions(moderate_members=True)
-async def mute(interaction: discord.Interaction, member: discord.Member, minutes: int, reason: str = "Не указана"):
-    # 1. Выдаем роль
-    mute_role = interaction.guild.get_role(MUTE_ROLE_ID)
-    if mute_role:
-        await member.add_roles(mute_role, reason=f"Мут: {reason}")
-    
-    # 2. Устанавливаем таймаут
-    duration = discord.utils.utcnow() + discord.timedelta(minutes=minutes)
-    await member.timeout(duration, reason=reason)
-    
-    await interaction.response.send_message(
-        f"🔇 Пользователь {member.mention} замучен на {minutes} мин. Роль выдана.", 
-        ephemeral=False
-    )
+
     
 # ---------------------------------------------------------
 # ЗАПУСК БОТА И WEB-СЕРВЕРА
