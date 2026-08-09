@@ -961,7 +961,6 @@ async def on_voice_state_update(member, before, after):
             f"🔀 **Перемещение в войсе**\n• **Участник:** {member.mention}\n• **Маршрут:** **{before.channel.name}** ➡️ **{after.channel.name}**"
         )
 
-
 @bot.event
 async def on_member_ban(guild, user):
     channel = guild.get_channel(LOG_CHANNEL_ID)
@@ -969,20 +968,26 @@ async def on_member_ban(guild, user):
         return
 
     moderator = "Неизвестно"
+    reason = "Не указана"
+
     try:
-        async for entry in guild.audit_logs(limit=3, action=discord.AuditLogAction.ban):
+        # Опрашиваем аудит-логи сервера, чтобы найти, кто забанил
+        async for entry in guild.audit_logs(limit=5, action=discord.AuditLogAction.ban):
             if entry.target.id == user.id:
                 moderator = entry.user.mention
+                reason = entry.reason or "Не указана"
                 break
     except Exception:
         pass
 
+    # Отправка лога с указанием реального человека (администратора)
     await channel.send(
         f"🚫 **Участник забанен**\n"
         f"• **Пользователь:** {user.mention} (`{user.id}`)\n"
-        f"• **Забанил:** {interaction.user.mention}\n"
+        f"• **Забанил:** {moderator}\n"
         f"• **Причина:** {reason}"
     )
+    
 
 
 @bot.event
