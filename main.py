@@ -970,7 +970,8 @@ async def on_member_ban(guild, user):
     await channel.send(
         f"🚫 **Участник забанен**\n"
         f"• **Пользователь:** {user.mention} (`{user.id}`)\n"
-        f"• **Забанил:** {moderator}"
+        f"• **Забанил:** {interaction.user.mention}\n"
+        f"• **Причина:** {reason}"
     )
 
 
@@ -992,7 +993,7 @@ async def on_member_unban(guild, user):
     await channel.send(
         f"✅ **Участник разбанен**\n"
         f"• **Пользователь:** {user.mention} (`{user.id}`)\n"
-        f"• **Разбанил:** {moderator}"
+        f"• **Забанил:** {interaction.user.mention}\n"
     )
 
 
@@ -1017,7 +1018,7 @@ async def on_member_remove(member):
     try:
         async for entry in member.guild.audit_logs(limit=3, action=action_type):
             if entry.target.id == member.id:
-                moderator = entry.user.mention
+                moderator = entry.user.mention if 'entry' in locals() and entry.user else "Неизвестно"
                 break
     except Exception:
         pass
@@ -1026,7 +1027,7 @@ async def on_member_remove(member):
         await channel.send(
             f"👢 **Участник изгнан (Кик)**\n"
             f"• **Пользователь:** {member.mention} (`{member.id}`)\n"
-            f"• **Выгнал:** {moderator}"
+            f"• **Выгнал:** {interaction.user.mention}\n"
         )
     else:
         await channel.send(
@@ -1430,14 +1431,26 @@ async def mute(interaction: discord.Interaction, member: discord.Member, minutes
     if mute_role:
         await member.add_roles(mute_role, reason=f"Мут: {reason}")
     
-    # 2. Устанавливаем таймаут (используем datetime.timedelta вместо discord.timedelta)
+    # 2. Устанавливаем таймаут
     duration = discord.utils.utcnow() + datetime.timedelta(minutes=minutes)
     await member.timeout(duration, reason=reason)
     
+    # 3. ОТПРАВКА ЛОГА (убедитесь, что передаете interaction.user, а не бота)
+    # Пример отправки через embed, где модератор — это interaction.user:
+    log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+    if log_channel:
+        embed = discord.Embed(title="🔇 Выдан мут (таймаут)", color=discord.Color.dark_grey())
+        embed.add_field(name="Пользователь", value=member.mention, inline=False)
+        embed.add_field(name="Выдал", value=interaction.user.mention, inline=False) # <--- ВОТ ЗДЕСЬ реальный человек
+        embed.add_field(name="Причина", value=reason, inline=False)
+        embed.add_field(name="До", value=duration.strftime('%d.%m.%Y %H:%M'), inline=False)
+        await log_channel.send(embed=embed)
+
     await interaction.response.send_message(
         f"🔇 Пользователь {member.mention} замучен на {minutes} мин. Роль выдана.", 
-        ephemeral=False
+        ephemeral=True
     )
+    
 # ------------------------------------
 
 
