@@ -9,20 +9,18 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import logging
-# Импортируем функционал приваток из privates.py
 from privates import CreateRoomButtonView
 import yt_dlp
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
-MUTE_ROLE_ID = 1530607100701442208  # Замените это число на реальный ID вашей роли мута из Discord
+MUTE_ROLE_ID = 1530607100701442208
 
 WARN_ROLES = {
     1: 1512870192076685442,  # ID роли за 1 варн
     2: 1512870420339101746,  # ID роли за 2 варна
     3: 1512870515960971274   # ID роли за 3 варна
 }
-# Подключение к базе данных варнов (создаст файл warns.db)
 conn = sqlite3.connect("warns.db")
 cursor = conn.cursor()
 
