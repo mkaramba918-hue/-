@@ -11,6 +11,14 @@ from discord import app_commands
 import logging
 from privates import CreateRoomButtonView
 import yt_dlp
+from datetime import datetime
+import pytz
+
+def get_msk_time():
+    # Устанавливаем часовой пояс МСК
+    msk = pytz.timezone('Europe/Moscow')
+    # Получаем текущее время в МСК и форматируем его
+    return datetime.now(msk).strftime("%d.%m.%Y %H:%M:%S")
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
