@@ -12,6 +12,12 @@ import logging
 from privates import CreateRoomButtonView
 import yt_dlp
 from datetime import datetime
+import pytz
+
+def get_msk_time():
+    msk = pytz.timezone('Europe/Moscow')
+    return datetime.now(msk).strftime("%d.%m.%Y %H:%M:%S")
+    
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
@@ -595,14 +601,19 @@ async def ban(interaction: discord.Interaction, member: discord.Member, days: in
     await member.ban(reason=full_reason)
 
     # 3. Отправляем лог в канал
-    log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+        current_time = get_msk_time()
     if log_channel:
+        # Получаем текущее время по МСК
+
         embed = discord.Embed(title="🚫 Бан участника", color=discord.Color.red())
+        embed.add_field(name="📅 Дата и время (МСК)", value=f"`{current_time}`", inline=False)
         embed.add_field(name="Пользователь", value=f"{member.mention} (`{member.id}`)", inline=False)
         embed.add_field(name="Забанил", value=interaction.user.mention, inline=False)
         embed.add_field(name="Срок", value=duration_text, inline=False)
         embed.add_field(name="Причина", value=reason, inline=False)
         await log_channel.send(embed=embed)
+        
 
     await interaction.response.send_message(
         f"⛔️ Пользователь {member.mention} успешно забанен ({duration_text}).", 
@@ -909,8 +920,10 @@ async def on_message_delete(message):
     if message.author.bot:
         return
     channel = bot.get_channel(LOG_CHANNEL_ID)
+    timestamp = get_msk_time()
     if channel:
         await channel.send(
+            f"📅 **Время МСК:** `{timestamp}`\n"
             f"🗑️ **Сообщение удалено**\n"
             f"• **Автор:** {message.author.mention} (`{message.author.id}`)\n"
             f"• **Канал:** {message.channel.mention}\n"
@@ -931,8 +944,10 @@ async def on_raw_message_delete(payload):
 
     target_channel = bot.get_channel(payload.channel_id)
     channel_mention = target_channel.mention if target_channel else f"<#{payload.channel_id}>"
-
+    timestamp = get_msk_time()
+    
     await channel.send(
+        f"📅 **Время МСК:** `{timestamp}`\n"
         f"🗑️ **Сообщение удалено (из кэша/очистки)**\n"
         f"• **Канал:** {channel_mention}\n"
         f"• **ID сообщения:** `{payload.message_id}`"
@@ -944,8 +959,10 @@ async def on_message_edit(before, after):
     if before.author.bot or before.content == after.content:
         return
     channel = bot.get_channel(LOG_CHANNEL_ID)
+    timestamp = get_msk_time()
     if channel:
         await channel.send(
+            f"📅 **Время МСК:** `{timestamp}`\n"
             f"✏️ **Сообщение отредактировано**\n"
             f"• **Автор:** {before.author.mention}\n"
             f"• **Канал:** {before.channel.mention}\n"
@@ -959,19 +976,23 @@ async def on_voice_state_update(member, before, after):
     if member.bot:
         return
     channel = bot.get_channel(LOG_CHANNEL_ID)
+    timestamp = get_msk_time()
     if not channel:
         return
 
     if before.channel is None and after.channel is not None:
         await channel.send(
+            f"📅 **Время МСК:** `{timestamp}`\n"
             f"🔊 **Подключение к войсу**\n• **Участник:** {member.mention}\n• **Канал:** **{after.channel.name}**"
         )
     elif before.channel is not None and after.channel is None:
         await channel.send(
+            f"📅 **Время МСК:** `{timestamp}`\n"
             f"🔇 **Выход из войса**\n• **Участник:** {member.mention}\n• **Канал:** **{before.channel.name}**"
         )
     elif before.channel != after.channel:
         await channel.send(
+            f"📅 **Время МСК:** `{timestamp}`\n"
             f"🔀 **Перемещение в войсе**\n• **Участник:** {member.mention}\n• **Маршрут:** **{before.channel.name}** ➡️ **{after.channel.name}**"
         )
 
@@ -979,8 +1000,10 @@ async def on_voice_state_update(member, before, after):
 @bot.event
 async def on_member_join(member):
     channel = member.guild.get_channel(LOG_CHANNEL_ID)
+    timestamp = get_msk_time()
     if channel:
         await channel.send(
+            f"📅 **Время МСК:** `{timestamp}`\n"
             f"📥 **Новый участник**\n• **Пользователь:** {member.mention} (`{member.id}`)"
         )
 
@@ -988,6 +1011,7 @@ async def on_member_join(member):
 @bot.event
 async def on_member_remove(member):
     channel = member.guild.get_channel(LOG_CHANNEL_ID)
+    timestamp = get_msk_time()
     if not channel:
         return
 
@@ -1004,12 +1028,14 @@ async def on_member_remove(member):
 
     if moderator:
         await channel.send(
+            f"📅 **Время МСК:** `{timestamp}`\n"
             f"👢 **Участник изгнан (Кик)**\n"
             f"• **Пользователь:** {member.mention} (`{member.id}`)\n"
             f"• **Выгнал:** {interaction.user.mention}\n"
         )
     else:
         await channel.send(
+            f"📅 **Время МСК:** `{timestamp}`\n"
             f"📤 **Участник покинул сервер**\n"
             f"• **Пользователь:** {member.mention} (`{member.id}`)"
         )
@@ -1018,6 +1044,7 @@ async def on_member_remove(member):
 @bot.event
 async def on_guild_channel_create(channel_obj):
     channel = channel_obj.guild.get_channel(LOG_CHANNEL_ID)
+    timestamp = get_msk_time()
     if not channel:
         return
 
@@ -1031,6 +1058,7 @@ async def on_guild_channel_create(channel_obj):
         pass
 
     await channel.send(
+        f"📅 **Время МСК:** `{timestamp}`\n"
         f"📁 **Создан канал**\n"
         f"• **Название:** {channel_obj.name}\n"
         f"• **Создал:** {moderator}"
@@ -1040,6 +1068,7 @@ async def on_guild_channel_create(channel_obj):
 @bot.event
 async def on_guild_channel_delete(channel_obj):
     channel = channel_obj.guild.get_channel(LOG_CHANNEL_ID)
+    timestamp = get_msk_time()
     if not channel:
         return
 
@@ -1053,6 +1082,7 @@ async def on_guild_channel_delete(channel_obj):
         pass
 
     await channel.send(
+        f"📅 **Время МСК:** `{timestamp}`\n"
         f"🗑️ **Удален канал**\n"
         f"• **Название:** {channel_obj.name}\n"
         f"• ** Удалил:** {moderator}"
@@ -1062,6 +1092,7 @@ async def on_guild_channel_delete(channel_obj):
 @bot.event
 async def on_member_update(before, after):
     channel = before.guild.get_channel(LOG_CHANNEL_ID)
+    timestamp = get_msk_time()
     if not channel:
         return
 
@@ -1084,10 +1115,12 @@ async def on_member_update(before, after):
 
         for role in added_roles:
             await channel.send(
+                f"📅 **Время МСК:** `{timestamp}`\n"
                 f"👑 **Роль назначена**\n• **Участник:** {after.mention}\n• **Роль:** {role.mention}\n• **Выдал:** {moderator}"
             )
         for role in removed_roles:
             await channel.send(
+                f"📅 **Время МСК:** `{timestamp}`\n"
                 f"❌ **Роль снята**\n• **Участник:** {after.mention}\n• **Роль:** {role.mention}\n• **Снял:** {moderator}"
             )
 
@@ -1105,16 +1138,19 @@ async def on_member_update(before, after):
 
         if after.timed_out_until:
             await channel.send(
+                f"📅 **Время МСК:** `{timestamp}`\n"
                 f"🤐 **Выдан мут (таймаут)**\n• **Пользователь:** {after.mention}\n• **До:** `{after.timed_out_until}`\n• **Выдал:** {moderator}"
             )
         else:
             await channel.send(
+                f"📅 **Время МСК:** `{timestamp}`\n"
                 f"🔊 **Мут снят**\n• **Пользователь:** {after.mention}\n• **Снял:** {moderator}"
             )
             
 @bot.event
 async def on_raw_message_bulk_delete(payload):
     channel = bot.get_channel(LOG_CHANNEL_ID)
+    timestamp = get_msk_time()
     if not channel:
         return
 
@@ -1123,6 +1159,7 @@ async def on_raw_message_bulk_delete(payload):
     count = len(payload.message_ids)
 
     await channel.send(
+        f"📅 **Время МСК:** `{timestamp}`\n"
         f"🧹 **Массовое удаление сообщений (очистка)**\n"
         f"• **Канал:** {channel_mention}\n"
         f"• **Удалено сообщений:** `{count}`"
@@ -1135,6 +1172,7 @@ async def on_message(message):
         return
 
     if message.channel.id == LOG_CHANNEL_ID:
+        timestamp = get_msk_time()
         await bot.process_commands(message)
         return
 
@@ -1143,6 +1181,7 @@ async def on_message(message):
         content_text = message.content if message.content else "*[Текста нет]*"
         
         log_text = (
+            f"📅 **Время МСК:** `{timestamp}`\n"
             f"💬 **Новое сообщение**\n"
             f"• **Автор:** {message.author.mention} (`{message.author.id}`)\n"
             f"• **Канал:** {message.channel.mention}\n"
@@ -1352,7 +1391,9 @@ async def unban(interaction: discord.Interaction, user_id: str, reason: str = "�
 
     # 3. Отправляем лог в канал с указанием реального модератора
     log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+    timestamp = get_msk_time()
     if log_channel:
+        embed.add_field(name="📅 Дата и время (МСК)", value=f"`{current_time}`", inline=False)
         embed = discord.Embed(title="🔓 Пользователь разбанен", color=discord.Color.blue())
         embed.add_field(name="Пользователь", value=f"{user.mention} (`{user.id}`)", inline=False)
         embed.add_field(name="Разбанил", value=interaction.user.mention, inline=False)
@@ -1369,7 +1410,9 @@ async def unban(interaction: discord.Interaction, user_id: str, reason: str = "�
 async def on_warn_action(guild, title, member, moderator, reason, count):
     """Кастомный эвент для отправки логов варнов"""
     channel = guild.get_channel(LOG_CHANNEL_ID)
+    timestamp = get_msk_time()
     if channel:
+        embed.add_field(name="📅 Дата и время (МСК)", value=f"`{current_time}`", inline=False)
         embed = discord.Embed(title=title, color=discord.Color.gold())
         embed.add_field(name="Пользователь", value=member.mention, inline=True)
         embed.add_field(name="Модератор", value=moderator.mention, inline=True)
@@ -1380,7 +1423,9 @@ async def on_warn_action(guild, title, member, moderator, reason, count):
 @bot.event
 async def on_auto_ban(guild, member, count):
     channel = guild.get_channel(LOG_CHANNEL_ID)
+    timestamp = get_msk_time()
     if channel:
+        embed.add_field(name="📅 Дата и время (МСК)", value=f"`{current_time}`", inline=False)
         embed = discord.Embed(title="🚫 Автоматический бан", color=discord.Color.red())
         embed.add_field(name="Пользователь", value=member.mention, inline=True)
         embed.add_field(name="Причина", value=f"Достигнуто {count}/3 варнов", inline=False)
@@ -1452,7 +1497,9 @@ async def mute(interaction: discord.Interaction, member: discord.Member, minutes
     # 3. ОТПРАВКА ЛОГА (убедитесь, что передаете interaction.user, а не бота)
     # Пример отправки через embed, где модератор — это interaction.user:
     log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+    timestamp = get_msk_time()
     if log_channel:
+        embed.add_field(name="📅 Дата и время (МСК)", value=f"`{current_time}`", inline=False)
         embed = discord.Embed(title="🔇 Выдан мут (таймаут)", color=discord.Color.dark_grey())
         embed.add_field(name="Пользователь", value=member.mention, inline=False)
         embed.add_field(name="Выдал", value=interaction.user.mention, inline=False) # <--- ВОТ ЗДЕСЬ реальный человек
