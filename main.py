@@ -1178,6 +1178,7 @@ async def on_message(message):
     log_channel = message.guild.get_channel(LOG_CHANNEL_ID)
     if log_channel:
         content_text = message.content if message.content else "*[Текста нет]*"
+        timestamp = get_msk_time()
         
         log_text = (
             f"📅 **Время МСК:** `{timestamp}`\n"
