@@ -3,3 +3,4 @@ yt-dlp
 flask
 PyNaCl
 davey
+pytz
