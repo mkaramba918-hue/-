@@ -600,11 +600,10 @@ async def ban(interaction: discord.Interaction, member: discord.Member, days: in
     # 2. Баним пользователя
     await member.ban(reason=full_reason)
 
-    # 3. Отправляем лог в канал
-        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-        current_time = get_msk_time()
+        # 3. Отправляем лог в канал
+    log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
     if log_channel:
-        # Получаем текущее время по МСК
+        current_time = get_msk_time()
 
         embed = discord.Embed(title="🚫 Бан участника", color=discord.Color.red())
         embed.add_field(name="📅 Дата и время (МСК)", value=f"`{current_time}`", inline=False)
@@ -614,7 +613,7 @@ async def ban(interaction: discord.Interaction, member: discord.Member, days: in
         embed.add_field(name="Причина", value=reason, inline=False)
         await log_channel.send(embed=embed)
         
-
+        
     await interaction.response.send_message(
         f"⛔️ Пользователь {member.mention} успешно забанен ({duration_text}).", 
         ephemeral=True
