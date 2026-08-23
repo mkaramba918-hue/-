@@ -584,20 +584,16 @@ async def role_command(interaction: discord.Interaction, name: str, color: str):
     except Exception as e:
         conn.close()
         await interaction.response.send_message(f"❌ Произошла ошибка: {e}", ephemeral=True)
-
-@bot.tree.command(name="clear", description="Очистить сообщения в чате")
-@bot.tree.command(name="clear", description="Удалить сообщения в канале")
+        
+@bot.tree.command(name="clear", description="Очистить сообщения")
 @app_commands.describe(amount="Количество сообщений для удаления")
 @app_commands.checks.has_permissions(manage_messages=True)
 async def clear(interaction: discord.Interaction, amount: int):
     await interaction.response.defer(ephemeral=True)
-    
     deleted = await interaction.channel.purge(limit=amount)
-    
     await interaction.followup.send(f"🧹 Удалено сообщений: **{len(deleted)}**")
-    
-    add_log_entry("Очистка чата", f"#{interaction.channel.name}", interaction.user.name, f"Удалено сообщений: {len(deleted)}")
-    
+    add_log_entry("Очистка чата", f"#{interaction.channel.name}", interaction.user.name, f"Удалено: {len(deleted)}")
+        
 
 @bot.tree.command(name="kick", description="Изгнать участника с сервера")
 @app_commands.describe(member="Участник", reason="Причина изгнания")
