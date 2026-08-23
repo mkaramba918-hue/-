@@ -776,31 +776,6 @@ HTML_PAGE = """
 </html>
 """
 
-@app.route("/")
-@app.route("/logs")
-def web_logs():
-    cursor.execute("SELECT * FROM mod_logs ORDER BY id DESC LIMIT 200")
-    logs = cursor.fetchall()
-    
-    rows_html = ""
-    for log in logs:
-        badge_class = "badge-ban" if log[2] == "Бан" else ("badge-unban" if log[2] == "Разбан" else "badge-mute")
-        rows_html += f"""
-        <tr>
-            <td>{log[0]}</td>
-            <td><code>{log[1]}</code></td>
-            <td><span class="badge {badge_class}">{log[2]}</span></td>
-            <td>{log[3]}</td>
-            <td>{log[4]}</td>
-            <td>{log[5]}</td>
-        </tr>
-        """
-    return HTML_PAGE.replace("{rows}", rows_html)
-
-def run_flask():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
-    
 # --- Модуль настройки приватной комнаты ---
 
 class RenameModal(discord.ui.Modal, title="Изменить название комнаты"):
@@ -1625,8 +1600,40 @@ async def mute(interaction: discord.Interaction, member: discord.Member, minutes
         f"🔇 Пользователь {member.mention} замучен на {minutes} мин. Роль выдана.", 
         ephemeral=True
     )
+
+# ==========================================
+# ВЕБ-СЕРВЕР ДЛЯ ЛОГОВ
+# ==========================================
+
+@app.route("/")
+@app.route("/logs")
+def web_logs():
+    cursor.execute("SELECT * FROM mod_logs ORDER BY id DESC LIMIT 200")
+    logs = cursor.fetchall()
     
-# ------------------------------------
+    rows_html = ""
+    for log in logs:
+        badge_class = "badge-ban" if log[2] == "Бан" else ("badge-unban" if log[2] == "Разбан" else "badge-mute")
+        rows_html += f"""
+        <tr>
+            <td>{log[0]}</td>
+            <td><code>{log[1]}</code></td>
+            <td><span class="badge {badge_class}">{log[2]}</span></td>
+            <td>{log[3]}</td>
+            <td>{log[4]}</td>
+            <td>{log[5]}</td>
+        </tr>
+        """
+    return HTML_PAGE.replace("{rows}", rows_html)
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
+
+# ==========================================
+# ТОЧКА ВХОДА (САМЫЙ НИЗ ФАЙЛА)
+# ==========================================
+
 if __name__ == "__main__":
     Thread(target=run_flask, daemon=True).start()
     bot.run(DISCORD_TOKEN)
