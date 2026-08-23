@@ -752,6 +752,64 @@ async def setup_create(ctx):
         await ctx.message.delete()
     except:
         pass
+@bot.event
+async def on_message(message: discord.Message):
+    # Игнорируем сообщения в личке
+    if not message.guild:
+        return
+
+    # Логируем только реальных пользователей (ботов можно исключить, чтобы не засорять базу)
+    if not message.author.bot and message.content:
+        time_str = get_msk_time()
+        
+        # Записываем сообщение в БД
+        local_conn = sqlite3.connect("database.db")
+        local_cursor = local_conn.cursor()
+        local_cursor.execute(
+            "INSERT INTO mod_logs (time_msk, category, target_user, moderator, reason) VALUES (?, ?, ?, ?, ?)",
+            (
+                time_str,
+                "Чат",
+                f"#{message.channel.name}",
+                f"{message.author.name} ({message.author.id})",
+                f"Сообщение: {message.content}"
+            )
+        )
+        local_conn.commit()
+        local_conn.close()
+
+    # Обязательно для обработки остальных команд
+    await bot.process_commands(message)
+
+@bot.tree.command(name="sync_chat_history", description="Импортировать историю сообщений из текущего канала на сайт")
+@app_commands.describe(limit="Количество сообщений (по умолчанию 300)")
+@app_commands.checks.has_permissions(administrator=True)
+async def sync_chat_history(interaction: discord.Interaction, limit: int = 300):
+    await interaction.response.defer(ephemeral=True)
+    
+    local_conn = sqlite3.connect("database.db")
+    local_cursor = local_conn.cursor()
+    
+    count = 0
+    async for msg in interaction.channel.history(limit=limit, oldest_first=True):
+        if msg.content and not msg.author.bot:
+            time_str = msg.created_at.strftime("%d.%m.%Y %H:%M:%S")
+            local_cursor.execute(
+                "INSERT INTO mod_logs (time_msk, category, target_user, moderator, reason) VALUES (?, ?, ?, ?, ?)",
+                (
+                    time_str,
+                    "Чат",
+                    f"#{interaction.channel.name}",
+                    f"{msg.author.name} ({msg.author.id})",
+                    f"Сообщение: {msg.content}"
+                )
+            )
+            count += 1
+            
+    local_conn.commit()
+    local_conn.close()
+    await interaction.followup.send(f"✅ Успешно импортировано **{count}** сообщений из #{interaction.channel.name} на сайт!")
+    
 
 app = Flask(__name__)
 
@@ -847,16 +905,18 @@ HTML_PAGE = """
             <div class="form-group">
                 <label>Категория</label>
                 <select id="filterCategory" class="form-control" onchange="applyFilters()">
-                    <option value="">Все категории</option>
-                    <option value="Бан">Бан</option>
-                    <option value="Разбан">Разбан</option>
-                    <option value="Варн">Варн</option>
-                    <option value="Снятие варна">Снятие варна</option>
-                    <option value="Мут">Мут</option>
-                    <option value="Снятие мута">Снятие мута</option>
-                    <option value="Кик">Кик</option>
-                    <option value="Очистка чата">Очистка чата</option>
-                </select>
+            <option value="">Все категории</option>
+            <option value="Чат">Чат (Все сообщения)</option>
+            <option value="Бан">Бан</option>
+            <option value="Разбан">Разбан</option>
+            <option value="Варн">Варн</option>
+            <option value="Снятие варна">Снятие варна</option>
+            <option value="Мут">Мут</option>
+            <option value="Снятие мута">Снятие мута</option>
+            <option value="Кик">Кик</option>
+            <option value="Очистка чата">Очистка чата</option>
+            </select>
+            
             </div>
 
             <div class="form-group">
