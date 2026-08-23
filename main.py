@@ -1736,7 +1736,7 @@ async def mute(interaction: discord.Interaction, member: discord.Member, minutes
 # ==========================================
 # ВЕБ-СЕРВЕР ДЛЯ ЛОГОВ
 # ==========================================
-
+# Оставьте только один такой блок:
 @app.route("/")
 @app.route("/logs")
 def web_logs():
@@ -1745,15 +1745,16 @@ def web_logs():
     
     rows_html = ""
     for log in logs:
-        badge_class = "badge-ban" if log[2] == "Бан" else ("badge-unban" if log[2] == "Разбан" else "badge-mute")
         rows_html += f"""
-        <tr>
-            <td>{log[0]}</td>
+        <tr class="log-row">
+            <td>#{log[0]}</td>
             <td><code>{log[1]}</code></td>
-            <td><span class="badge {badge_class}">{log[2]}</span></td>
-            <td>{log[3]}</td>
+            <td><span class="cat-badge">{log[2]}</span></td>
+            <td><span class="user-badge">{log[3]}</span></td>
             <td>{log[4]}</td>
-            <td>{log[5]}</td>
+        </tr>
+        <tr class="sub-row">
+            <td colspan="5" class="reason-text">+ Причина / Инфо: {log[5]}</td>
         </tr>
         """
     return HTML_PAGE.replace("{rows}", rows_html)
@@ -1762,13 +1763,10 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
 
-# ==========================================
-# ТОЧКА ВХОДА (САМЫЙ НИЗ ФАЙЛА)
-# ==========================================
-
 if __name__ == "__main__":
     Thread(target=run_flask, daemon=True).start()
     bot.run(DISCORD_TOKEN)
+    
     
 # --- Запуск бота ---
 
