@@ -716,65 +716,197 @@ HTML_PAGE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Black Log — Модерация</title>
+    <title>Lunzø Community logs</title>
     <style>
-        * { box-sizing: border-box; }
-        body { background-color: #0b0e14; color: #d1d5db; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; }
-        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1f2937; padding-bottom: 15px; margin-bottom: 20px; }
-        .header h1 { margin: 0; color: #3b82f6; font-size: 24px; }
-        .search-bar { margin-bottom: 15px; }
-        .search-bar input { width: 100%; max-width: 400px; padding: 10px 14px; background: #161b22; border: 1px solid #30363d; color: #fff; border-radius: 6px; outline: none; }
-        .search-bar input:focus { border-color: #3b82f6; }
-        .table-container { overflow-x: auto; background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; text-align: left; }
-        th { background: #21262d; color: #9ca3af; font-size: 13px; text-transform: uppercase; padding: 12px 16px; border-bottom: 1px solid #30363d; }
-        td { padding: 12px 16px; border-bottom: 1px solid #21262d; font-size: 14px; }
-        tr:hover { background-color: #1c2128; }
-        .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
-        .badge-ban { background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); }
-        .badge-unban { background: rgba(59, 130, 246, 0.2); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.4); }
-        .badge-mute { background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4); }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background-color: #0b111e; color: #c3cad9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        /* Верхняя панель */
+        .navbar { height: 50px; background: #080d17; border-bottom: 1px solid #172338; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+        .logo-area { display: flex; align-items: center; gap: 12px; }
+        .logo-title { color: #fff; font-size: 16px; font-weight: 700; letter-spacing: 0.5px; }
+        .server-tag { background: #0088cc; color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 3px; font-weight: 600; }
+        .user-info { color: #5294e2; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+
+        /* Главная рабочая область */
+        .main-layout { display: flex; flex: 1; height: calc(100vh - 50px); }
+
+        /* Левая область с таблицей */
+        .content-area { flex: 1; overflow-y: auto; padding: 15px; }
+        .logs-table { width: 100%; border-collapse: collapse; }
+        .logs-table th { background: #0f172a; color: #fff; font-size: 12px; text-align: left; padding: 10px 12px; border-bottom: 2px solid #1e293b; position: sticky; top: -15px; }
+        .logs-table td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid #162032; }
+        
+        .log-row { background: #0d1527; transition: background 0.2s; }
+        .log-row:hover { background: #131e36; }
+        .sub-row { background: #0a101f; color: #8899ac; font-size: 12px; }
+        
+        .cat-badge { color: #38bdf8; font-weight: 500; }
+        .user-badge { color: #60a5fa; }
+        .reason-text { color: #94a3b8; padding: 6px 12px 10px 12px; border-bottom: 1px solid #1a263d; }
+
+        /* Правая боковая панель фильтров */
+        .sidebar-filters { width: 320px; background: #0d1526; border-left: 1px solid #172338; padding: 20px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
+        .filter-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e2d47; padding-bottom: 10px; color: #fff; font-size: 14px; font-weight: bold; }
+        
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-group label { font-size: 12px; color: #8292a6; }
+        .form-control { background: #080d18; border: 1px solid #1e2d4a; color: #fff; padding: 8px 10px; border-radius: 4px; font-size: 13px; outline: none; }
+        .form-control:focus { border-color: #0284c7; }
+        
+        .btn-group { display: flex; gap: 8px; margin-top: 10px; }
+        .btn { flex: 1; padding: 8px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; }
+        .btn-apply { background: #0284c7; color: white; }
+        .btn-reset { background: transparent; border: 1px solid #dc2626; color: #f87171; }
+        .btn-apply:hover { background: #0369a1; }
+        .btn-reset:hover { background: rgba(220, 38, 38, 0.1); }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>🛡️ Black Log — Журнал Модерации</h1>
-    </div>
-    
-    <div class="search-bar">
-        <input type="text" id="filterInput" placeholder="Поиск по нику, ID или причине..." onkeyup="filterRows()">
+
+    <div class="navbar">
+        <div class="logo-area">
+            <span class="logo-title">Lunzø Community logs</span>
+            <span class="server-tag">MAIN DISCORD</span>
+        </div>
+        <div class="user-info">
+            <span>🛡️ Панель Администрации</span>
+        </div>
     </div>
 
-    <div class="table-container">
-        <table id="logsTable">
-            <thead>
-                <tr>
-                    <th>#</th>
-                    <th>Время (МСК)</th>
-                    <th>Категория</th>
-                    <th>Нарушитель</th>
-                    <th>Модератор</th>
-                    <th>Причина / Срок</th>
-                </tr>
-            </thead>
-            <tbody>
-                {rows}
-            </tbody>
-        </table>
+    <div class="main-layout">
+        <!-- Таблица логов -->
+        <div class="content-area">
+            <table class="logs-table">
+                <thead>
+                    <tr>
+                        <th style="width: 50px;">#</th>
+                        <th style="width: 150px;">Время (MSK)</th>
+                        <th>Категория</th>
+                        <th>Нарушитель</th>
+                        <th>Модератор</th>
+                    </tr>
+                </thead>
+                <tbody id="logsBody">
+                    {rows}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Правая панель фильтров -->
+        <div class="sidebar-filters">
+            <div class="filter-header">
+                <span>ФИЛЬТРЫ</span>
+            </div>
+
+            <div class="form-group">
+                <label>Категория</label>
+                <select id="filterCategory" class="form-control" onchange="applyFilters()">
+                    <option value="">Все категории</option>
+                    <option value="Бан">Бан</option>
+                    <option value="Разбан">Разбан</option>
+                    <option value="Варн">Варн</option>
+                    <option value="Снятие варна">Снятие варна</option>
+                    <option value="Мут">Мут</option>
+                    <option value="Снятие мута">Снятие мута</option>
+                    <option value="Кик">Кик</option>
+                    <option value="Очистка чата">Очистка чата</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Нарушитель (Ник или ID)</label>
+                <input type="text" id="filterTarget" class="form-control" placeholder="Поиск нарушителя..." onkeyup="applyFilters()">
+            </div>
+
+            <div class="form-group">
+                <label>Модератор</label>
+                <input type="text" id="filterMod" class="form-control" placeholder="Поиск модератора..." onkeyup="applyFilters()">
+            </div>
+
+            <div class="form-group">
+                <label>Дата (ДД.ММ.ГГГГ)</label>
+                <input type="date" id="filterDate" class="form-control" onchange="applyFilters()">
+            </div>
+
+            <div class="btn-group">
+                <button class="btn btn-apply" onclick="applyFilters()">Применить</button>
+                <button class="btn btn-reset" onclick="resetFilters()">Сбросить всё</button>
+            </div>
+        </div>
     </div>
 
     <script>
-        function filterRows() {
-            let input = document.getElementById("filterInput").value.toLowerCase();
-            let rows = document.querySelectorAll("#logsTable tbody tr");
-            rows.forEach(r => {
-                r.style.display = r.innerText.toLowerCase().includes(input) ? "" : "none";
+        function applyFilters() {
+            let cat = document.getElementById("filterCategory").value.toLowerCase();
+            let target = document.getElementById("filterTarget").value.toLowerCase();
+            let mod = document.getElementById("filterMod").value.toLowerCase();
+            let dateVal = document.getElementById("filterDate").value; // формат yyyy-mm-dd
+            
+            let formattedDate = "";
+            if (dateVal) {
+                let parts = dateVal.split("-");
+                formattedDate = `${parts[2]}.${parts[1]}.${parts[0]}`; // формат dd.mm.yyyy
+            }
+
+            let rows = document.querySelectorAll("#logsBody .log-row");
+
+            rows.forEach(row => {
+                let subRow = row.nextElementSibling;
+                let rowTime = row.children[1].innerText.toLowerCase();
+                let rowCat = row.children[2].innerText.toLowerCase();
+                let rowTarget = row.children[3].innerText.toLowerCase();
+                let rowMod = row.children[4].innerText.toLowerCase();
+
+                let matchCat = !cat || rowCat.includes(cat);
+                let matchTarget = !target || rowTarget.includes(target);
+                let matchMod = !mod || rowMod.includes(mod);
+                let matchDate = !formattedDate || rowTime.includes(formattedDate);
+
+                if (matchCat && matchTarget && matchMod && matchDate) {
+                    row.style.display = "";
+                    if (subRow && subRow.classList.contains("sub-row")) subRow.style.display = "";
+                } else {
+                    row.style.display = "none";
+                    if (subRow && subRow.classList.contains("sub-row")) subRow.style.display = "none";
+                }
             });
+        }
+
+        function resetFilters() {
+            document.getElementById("filterCategory").value = "";
+            document.getElementById("filterTarget").value = "";
+            document.getElementById("filterMod").value = "";
+            document.getElementById("filterDate").value = "";
+            applyFilters();
         }
     </script>
 </body>
 </html>
 """
+
+@app.route("/")
+@app.route("/logs")
+def web_logs():
+    cursor.execute("SELECT * FROM mod_logs ORDER BY id DESC LIMIT 200")
+    logs = cursor.fetchall()
+    
+    rows_html = ""
+    for log in logs:
+        rows_html += f"""
+        <tr class="log-row">
+            <td>#{log[0]}</td>
+            <td><code>{log[1]}</code></td>
+            <td><span class="cat-badge">{log[2]}</span></td>
+            <td><span class="user-badge">{log[3]}</span></td>
+            <td>{log[4]}</td>
+        </tr>
+        <tr class="sub-row">
+            <td colspan="5" class="reason-text">+ Причина / Инфо: {log[5]}</td>
+        </tr>
+        """
+    return HTML_PAGE.replace("{rows}", rows_html)
+    
 
 # --- Модуль настройки приватной комнаты ---
 
