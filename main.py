@@ -29,6 +29,7 @@ WARN_ROLES = {
     3: 1512870515960971274   # ID роли за 3 варна
 }
 conn = sqlite3.connect("warns.db")
+conn = sqlite3.connect("warns.db", check_same_thread=False)
 cursor = conn.cursor()
 
 cursor.execute("""
@@ -38,6 +39,28 @@ CREATE TABLE IF NOT EXISTS warns (
 )
 """)
 conn.commit()
+
+# --- ТАБЛИЦА И ФУНКЦИЯ ДЛЯ ЛОГОВ ---
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS mod_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    time_msk TEXT,
+    category TEXT,
+    target_user TEXT,
+    moderator TEXT,
+    reason TEXT
+)
+""")
+conn.commit()
+
+def add_log_entry(category: str, target: str, moderator: str, reason: str):
+    time_str = get_msk_time()
+    cursor.execute(
+        "INSERT INTO mod_logs (time_msk, category, target_user, moderator, reason) VALUES (?, ?, ?, ?, ?)",
+        (time_str, category, target, moderator, reason)
+    )
+    conn.commit()
+# ------------------------------------
 
 def get_warns(user_id: int) -> int:
     cursor.execute("SELECT count FROM warns WHERE user_id = ?", (user_id,))
@@ -457,6 +480,12 @@ async def unmute(interaction: discord.Interaction, member: discord.Member, reaso
         f"🔊 С пользователя {member.mention} снят мут и возвращена нормальная роль.", 
         ephemeral=True
     )
+    add_log_entry(
+    category="Снятие мута",
+    target=f"{member.name} ({member.id})",
+    moderator=interaction.user.name,
+    reason="Снятие ограничений"
+    )
     
     
 
@@ -570,7 +599,13 @@ async def clear(interaction: discord.Interaction, amount: int = 5):
   await interaction.followup.send(
       f"🧹 Удалено сообщений: **{len(deleted) - 1}**", ephemeral=True
   )
-    
+    add_log_entry(
+    category="Очистка чата",
+    target=f"Канал: #{interaction.channel.name}",
+    moderator=interaction.user.name,
+    reason=f"Удалено сообщений: {amount}"
+    )
+
 
 @bot.tree.command(name="kick", description="Изгнать участника с сервера")
 @app_commands.describe(member="Участник", reason="Причина изгнания")
@@ -582,6 +617,12 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
         pass
     await member.kick(reason=reason)
     await interaction.response.send_message(f"🚪 Участник **{member.name}** кикнут. Причина: {reason}")
+add_log_entry(
+    category="Кик",
+    target=f"{member.name} ({member.id})",
+    moderator=interaction.user.name,
+    reason=reason
+)
 
 @bot.tree.command(name="ban_user", description="Забанить участника на сервере")
 @app_commands.describe(member="Участник", days="Срок бана в днях (0 - навсегда)", reason="Причина бана")
@@ -617,6 +658,12 @@ async def ban(interaction: discord.Interaction, member: discord.Member, days: in
     await interaction.response.send_message(
         f"⛔️ Пользователь {member.mention} успешно забанен ({duration_text}).", 
         ephemeral=True
+    )
+    add_log_entry(
+    category="Бан",
+    target=f"{member.name} ({member.id})",
+    moderator=interaction.user.name,
+    reason=f"Срок: {duration_text} | {reason}"
     )
     
     
@@ -686,7 +733,99 @@ async def setup_create(ctx):
     except:
         pass
 
+app = Flask(__name__)
 
+HTML_PAGE = """
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Black Log — Модерация</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { background-color: #0b0e14; color: #d1d5db; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1f2937; padding-bottom: 15px; margin-bottom: 20px; }
+        .header h1 { margin: 0; color: #3b82f6; font-size: 24px; }
+        .search-bar { margin-bottom: 15px; }
+        .search-bar input { width: 100%; max-width: 400px; padding: 10px 14px; background: #161b22; border: 1px solid #30363d; color: #fff; border-radius: 6px; outline: none; }
+        .search-bar input:focus { border-color: #3b82f6; }
+        .table-container { overflow-x: auto; background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th { background: #21262d; color: #9ca3af; font-size: 13px; text-transform: uppercase; padding: 12px 16px; border-bottom: 1px solid #30363d; }
+        td { padding: 12px 16px; border-bottom: 1px solid #21262d; font-size: 14px; }
+        tr:hover { background-color: #1c2128; }
+        .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+        .badge-ban { background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); }
+        .badge-unban { background: rgba(59, 130, 246, 0.2); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.4); }
+        .badge-mute { background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4); }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🛡️ Black Log — Журнал Модерации</h1>
+    </div>
+    
+    <div class="search-bar">
+        <input type="text" id="filterInput" placeholder="Поиск по нику, ID или причине..." onkeyup="filterRows()">
+    </div>
+
+    <div class="table-container">
+        <table id="logsTable">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Время (МСК)</th>
+                    <th>Категория</th>
+                    <th>Нарушитель</th>
+                    <th>Модератор</th>
+                    <th>Причина / Срок</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        function filterRows() {
+            let input = document.getElementById("filterInput").value.toLowerCase();
+            let rows = document.querySelectorAll("#logsTable tbody tr");
+            rows.forEach(r => {
+                r.style.display = r.innerText.toLowerCase().includes(input) ? "" : "none";
+            });
+        }
+    </script>
+</body>
+</html>
+"""
+
+@app.route("/")
+@app.route("/logs")
+def web_logs():
+    cursor.execute("SELECT * FROM mod_logs ORDER BY id DESC LIMIT 200")
+    logs = cursor.fetchall()
+    
+    rows_html = ""
+    for log in logs:
+        badge_class = "badge-ban" if log[2] == "Бан" else ("badge-unban" if log[2] == "Разбан" else "badge-mute")
+        rows_html += f"""
+        <tr>
+            <td>{log[0]}</td>
+            <td><code>{log[1]}</code></td>
+            <td><span class="badge {badge_class}">{log[2]}</span></td>
+            <td>{log[3]}</td>
+            <td>{log[4]}</td>
+            <td>{log[5]}</td>
+        </tr>
+        """
+    return HTML_PAGE.replace("{rows}", rows_html)
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
+    
 # --- Модуль настройки приватной комнаты ---
 
 class RenameModal(discord.ui.Modal, title="Изменить название комнаты"):
@@ -1513,8 +1652,10 @@ async def mute(interaction: discord.Interaction, member: discord.Member, minutes
     )
     
 # ------------------------------------
-
-
+if __name__ == "__main__":
+    Thread(target=run_flask, daemon=True).start()
+    bot.run(DISCORD_TOKEN)
+    
 # --- Запуск бота ---
 
 if __name__ == "__main__":
