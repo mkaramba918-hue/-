@@ -617,13 +617,14 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
         pass
     await member.kick(reason=reason)
     await interaction.response.send_message(f"🚪 Участник **{member.name}** кикнут. Причина: {reason}")
+
+ 
 add_log_entry(
     category="Кик",
     target=f"{member.name} ({member.id})",
     moderator=interaction.user.name,
     reason=reason
 )
-
 @bot.tree.command(name="ban_user", description="Забанить участника на сервере")
 @app_commands.describe(member="Участник", days="Срок бана в днях (0 - навсегда)", reason="Причина бана")
 @app_commands.default_permissions(ban_members=True)
@@ -642,10 +643,13 @@ async def ban(interaction: discord.Interaction, member: discord.Member, days: in
     await member.ban(reason=full_reason)
 
         # 3. Отправляем лог в канал
+        # Вызов записи в базу данных (4 пробела перед строкой):
+    add_log_entry("Бан", f"{member.name} ({member.id})", interaction.user.name, f"Срок: {duration_text} | {reason}")
+
+    # 3. Отправляем лог в Discord-канал
     log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
     if log_channel:
         current_time = get_msk_time()
-
         embed = discord.Embed(title="🚫 Бан участника", color=discord.Color.red())
         embed.add_field(name="📅 Дата и время (МСК)", value=f"`{current_time}`", inline=False)
         embed.add_field(name="Пользователь", value=f"{member.mention} (`{member.id}`)", inline=False)
@@ -658,12 +662,6 @@ async def ban(interaction: discord.Interaction, member: discord.Member, days: in
     await interaction.response.send_message(
         f"⛔️ Пользователь {member.mention} успешно забанен ({duration_text}).", 
         ephemeral=True
-    )
-    add_log_entry(
-    category="Бан",
-    target=f"{member.name} ({member.id})",
-    moderator=interaction.user.name,
-    reason=f"Срок: {duration_text} | {reason}"
     )
     
     
