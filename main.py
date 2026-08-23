@@ -319,7 +319,52 @@ async def getlogs_text(ctx):
         conn.close()
     except Exception:
         pass
+#логирование
+@bot.event
+async def on_message(message: discord.Message):
+    # Проверяем, что сообщение пришло именно в канал логов
+    if message.channel.id == LOG_CHANNEL_ID:
+        time_str = get_msk_time()
+        
+        # 1. Если бот отправил Embed (карточку с полями)
+        if message.embeds:
+            for emb in message.embeds:
+                category = emb.title or "Лог сервера"
+                desc = emb.description or ""
+                
+                # Собираем данные из полей эмбеда
+                target_user = "Сервер"
+                moderator = "Бот"
+                details = []
+                
+                for f in emb.fields:
+                    f_name = f.name.lower()
+                    if "пользователь" in f_name or "нарушитель" in f_name or "участник" in f_name:
+                        target_user = f.value
+                    elif "модератор" in f_name or "админ" in f_name or "автор" in f_name or "забанил" in f_name:
+                        moderator = f.value
+                    else:
+                        details.append(f"{f.name}: {f.value}")
+                
+                reason_text = f"{desc} | " + " | ".join(details) if details else (desc or "Без описания")
+                
+                cursor.execute(
+                    "INSERT INTO mod_logs (time_msk, category, target_user, moderator, reason) VALUES (?, ?, ?, ?, ?)",
+                    (time_str, category, target_user, moderator, reason_text)
+                )
+                conn.commit()
 
+        # 2. Если бот отправил обычный текст
+        elif message.content:
+            cursor.execute(
+                "INSERT INTO mod_logs (time_msk, category, target_user, moderator, reason) VALUES (?, ?, ?, ?, ?)",
+                (time_str, "Чат-лог", "Сервер", message.author.name, message.content)
+            )
+            conn.commit()
+
+    # Обязательно для работы остальных текстовых команд
+    await bot.process_commands(message)
+    
 @bot.command(name="fix_db")
 @commands.is_owner() # Чтобы только вы могли это запустить
 async def fix_db(ctx):
