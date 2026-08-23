@@ -593,26 +593,15 @@ async def clear(interaction: discord.Interaction, amount: int):
     deleted = await interaction.channel.purge(limit=amount)
     await interaction.followup.send(f"🧹 Удалено сообщений: **{len(deleted)}**")
     add_log_entry("Очистка чата", f"#{interaction.channel.name}", interaction.user.name, f"Удалено: {len(deleted)}")
-        
 
 @bot.tree.command(name="kick", description="Изгнать участника с сервера")
-@app_commands.describe(member="Участник", reason="Причина изгнания")
+@app_commands.describe(member="Участник", reason="Причина кика")
 @app_commands.checks.has_permissions(kick_members=True)
-async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = "Причина не указана"):
-    try:
-        await member.send(f"⚠️ Вы были изгнаны с сервера **{interaction.guild.name}**. Причина: {reason}")
-    except:
-        pass
+async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = "Не указана"):
     await member.kick(reason=reason)
-    await interaction.response.send_message(f"🚪 Участник **{member.name}** кикнут. Причина: {reason}")
-
- 
-add_log_entry(
-    category="Кик",
-    target=f"{member.name} ({member.id})",
-    moderator=interaction.user.name,
-    reason=reason
-)
+    await interaction.response.send_message(f"👢 {member.mention} был изгнан с сервера. Причина: {reason}")
+    add_log_entry("Кик", f"{member.name} ({member.id})", interaction.user.name, reason)
+    
 @bot.tree.command(name="ban_user", description="Забанить участника на сервере")
 @app_commands.describe(member="Участник", days="Срок бана в днях (0 - навсегда)", reason="Причина бана")
 @app_commands.default_permissions(ban_members=True)
