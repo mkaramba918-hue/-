@@ -885,29 +885,6 @@ HTML_PAGE = """
 </html>
 """
 
-@app.route("/")
-@app.route("/logs")
-def web_logs():
-    cursor.execute("SELECT * FROM mod_logs ORDER BY id DESC LIMIT 200")
-    logs = cursor.fetchall()
-    
-    rows_html = ""
-    for log in logs:
-        rows_html += f"""
-        <tr class="log-row">
-            <td>#{log[0]}</td>
-            <td><code>{log[1]}</code></td>
-            <td><span class="cat-badge">{log[2]}</span></td>
-            <td><span class="user-badge">{log[3]}</span></td>
-            <td>{log[4]}</td>
-        </tr>
-        <tr class="sub-row">
-            <td colspan="5" class="reason-text">+ Причина / Инфо: {log[5]}</td>
-        </tr>
-        """
-    return HTML_PAGE.replace("{rows}", rows_html)
-    
-
 # --- Модуль настройки приватной комнаты ---
 
 class RenameModal(discord.ui.Modal, title="Изменить название комнаты"):
