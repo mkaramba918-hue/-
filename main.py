@@ -640,10 +640,8 @@ async def sync_chat_history(interaction: discord.Interaction, limit: int = 300):
 
 # --- ЗАПУСК БОТА И WEB-ПАНЕЛИ ---
 if __name__ == "__main__":
-    from web import keep_alive
-    keep_alive()
-
     if not DISCORD_TOKEN:
         print("❌ Ошибка: Переменная DISCORD_TOKEN не задана!")
     else:
         bot.run(DISCORD_TOKEN)
+        
