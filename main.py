@@ -3,15 +3,10 @@ import sys
 import asyncio
 import datetime
 import sqlite3
-from threading import Thread
-from flask import Flask
-import discord
-from discord.ext import commands, tasks
-from discord import app_commands
-import logging
-from privates import CreateRoomButtonView
-import yt_dlp
 import pytz
+import discord
+from discord.ext import commands
+from discord import app_commands
 
 def get_msk_time():
     msk = pytz.timezone('Europe/Moscow')
@@ -75,12 +70,6 @@ CREATE TABLE IF NOT EXISTS shop_roles (
     purchases INTEGER DEFAULT 0
 )
 """)
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT
-)
-""")
 conn.commit()
 
 def add_log_entry(category: str, target: str, moderator: str, reason: str, audio_file: str = ""):
@@ -109,114 +98,207 @@ def update_warns(user_id: int, delta: int) -> int:
     conn.commit()
     return new_count
 
-# --- ПЕРЕХВАТЧИК КОНСОЛИ ---
-LOG_BUFFER = []
-MAX_BUFFER_SIZE = 25
-
-class ConsoleCapture:
-    def __init__(self):
-        self.original_stdout = sys.stdout
-        self.original_stderr = sys.stderr
-
-    def write(self, message):
-        self.original_stdout.write(message)
-        self.original_stdout.flush()
-        cleaned = message.strip()
-        if cleaned:
-            LOG_BUFFER.append(cleaned)
-            if len(LOG_BUFFER) > MAX_BUFFER_SIZE:
-                LOG_BUFFER.pop(0)
-
-    def flush(self):
-        self.original_stdout.flush()
-        self.original_stderr.flush()
-
-if not isinstance(sys.stdout, ConsoleCapture):
-    interceptor = ConsoleCapture()
-    sys.stdout = interceptor
-    sys.stderr = interceptor
-
 # --- ИНИЦИАЛИЗАЦИЯ DISCORD БОТА ---
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 intents.voice_states = True
+intents.guilds = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- ПРОВЕРКА ПРАВ ---
-def has_role_or_higher(*role_keys):
-    async def predicate(interaction: discord.Interaction):
-        if interaction.user == interaction.guild.owner:
-            return True
-        user_role_ids = [r.id for r in interaction.user.roles]
-        allowed_ids = [ROLE_IDS[key] for key in role_keys if key in ROLE_IDS]
-        if any(r_id in user_role_ids for r_id in allowed_ids):
-            return True
-        raise app_commands.CheckFailure("У вас недостаточно прав для использования этой команды!")
-    return app_commands.check(predicate)
+# --- ПРИВАТНЫЕ КОМНАТЫ: МОДАЛЬНЫЕ ОКНА И МЕНЮ ---
+class CreateRoomModal(discord.ui.Modal, title="Создание приватной комнаты"):
+    room_name = discord.ui.TextInput(
+        label="Название комнаты",
+        placeholder="Введите название вашей комнаты...",
+        max_length=50,
+    )
 
-async def handle_specific_role_slash(interaction: discord.Interaction, member: discord.Member, role_key: str, action: str):
-    role_id = ROLE_IDS.get(role_key)
-    role = interaction.guild.get_role(role_id)
-    if not role:
-        return await interaction.response.send_message(f"❌ Должность для `{role_key}` не найдена на сервере.", ephemeral=True)
-    
-    try:
-        if action == "add":
-            await member.add_roles(role)
-            await interaction.response.send_message(f"🎖 Участник **{member.display_name}** назначен на должность: **{role.name}**!")
-            add_log_entry("Роли", f"{member.name} ({member.id})", interaction.user.name, f"Назначена роль: {role.name}")
-        elif action == "remove":
-            await member.remove_roles(role)
-            await interaction.response.send_message(f"🛡 Участник **{member.display_name}** снят с должности: **{role.name}**.")
-            add_log_entry("Роли", f"{member.name} ({member.id})", interaction.user.name, f"Снята роль: {role.name}")
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ У бота недостаточно прав для выдачи этой роли.", ephemeral=True)
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        author = interaction.user
+        category = interaction.channel.category
+
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(connect=True),
+            author: discord.PermissionOverwrite(
+                connect=True, manage_channels=True, mute_members=True, deafen_members=True, move_members=True
+            )
+        }
+
+        try:
+            channel = await guild.create_voice_channel(
+                name=self.room_name.value,
+                overwrites=overwrites,
+                category=category
+            )
+            if author.voice:
+                await author.move_to(channel)
+            await interaction.followup.send(f"✅ Ваша комната **{self.room_name.value}** успешно создана!", ephemeral=True)
+            add_log_entry("Войс", f"#{self.room_name.value}", author.name, "Создана приватная комната")
+        except Exception as e:
+            await interaction.followup.send(f"❌ Ошибка создания комнаты: {e}", ephemeral=True)
+
+class CreateRoomView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Создать приватную комнату", style=discord.ButtonStyle.green, custom_id="create_room_btn_persistent", emoji="➕")
+    async def create_room_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CreateRoomModal())
+
+class RenameModal(discord.ui.Modal, title="Изменить название комнаты"):
+    new_name = discord.ui.TextInput(label="Новое название", placeholder="Введите название...", max_length=50)
+
+    def __init__(self, voice_channel: discord.VoiceChannel):
+        super().__init__()
+        self.voice_channel = voice_channel
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await self.voice_channel.edit(name=self.new_name.value)
+            await interaction.followup.send(f"✅ Название комнаты изменено на: **{self.new_name.value}**", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Не удалось изменить название: {e}", ephemeral=True)
+
+class LimitModal(discord.ui.Modal, title="Установить лимит мест"):
+    new_limit = discord.ui.TextInput(label="Лимит пользователей (0-99)", placeholder="Например: 5", max_length=2)
+
+    def __init__(self, voice_channel: discord.VoiceChannel):
+        super().__init__()
+        self.voice_channel = voice_channel
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            limit = int(self.new_limit.value)
+            if 0 <= limit <= 99:
+                await self.voice_channel.edit(user_limit=limit)
+                await interaction.followup.send(f"✅ Лимит пользователей установлен: **{limit}**", ephemeral=True)
+            else:
+                await interaction.followup.send("❌ Лимит должен быть от 0 до 99.", ephemeral=True)
+        except ValueError:
+            await interaction.followup.send("❌ Введите корректное число!", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Не удалось изменить лимит: {e}", ephemeral=True)
+
+class TargetUserSelectView(discord.ui.View):
+    def __init__(self, voice_channel: discord.VoiceChannel, action: str):
+        super().__init__(timeout=60)
+        self.voice_channel = voice_channel
+        self.action = action
+
+    @discord.ui.select(cls=discord.ui.UserSelect, placeholder="Выберите участника...")
+    async def select_callback(self, interaction: discord.Interaction, select: discord.ui.UserSelect):
+        target = select.values[0]
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            if self.action == "revoke":
+                await self.voice_channel.set_permissions(target, connect=False)
+                await interaction.followup.send(f"🚫 Пользователю {target.mention} запрещен вход в комнату.", ephemeral=True)
+            elif self.action == "grant":
+                await self.voice_channel.set_permissions(target, connect=True)
+                await interaction.followup.send(f"✅ Пользователю {target.mention} разрешен доступ в комнату.", ephemeral=True)
+            elif self.action == "kick":
+                member = interaction.guild.get_member(target.id)
+                if member and member.voice and member.voice.channel == self.voice_channel:
+                    await member.move_to(None)
+                    await interaction.followup.send(f"🚪 Пользователь {target.mention} выгнан из комнаты.", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ Пользователь не находится в этой комнате.", ephemeral=True)
+            elif self.action == "transfer":
+                await self.voice_channel.set_permissions(target, connect=True, manage_channels=True, mute_members=True, deafen_members=True, move_members=True)
+                await self.voice_channel.set_permissions(interaction.user, manage_channels=False)
+                await interaction.followup.send(f"👑 Права владельца переданы {target.mention}.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Ошибка действия: {e}", ephemeral=True)
+
+class RoomSettingsSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="Изменить название", description="Задать новое имя комнате", emoji="✏️", value="rename"),
+            discord.SelectOption(label="Установить лимит", description="Ограничить количество мест", emoji="👥", value="limit"),
+            discord.SelectOption(label="Забрать доступ", description="Запретить конкретному участнику вход", emoji="➖", value="revoke"),
+            discord.SelectOption(label="Выдать доступ", description="Разрешить участнику вход", emoji="➕", value="grant"),
+            discord.SelectOption(label="Закрыть комнату", description="Сделать закрытой для всех", emoji="🔒", value="lock"),
+            discord.SelectOption(label="Открыть комнату", description="Сделать открытой для всех", emoji="🔓", value="unlock"),
+            discord.SelectOption(label="Выгнать пользователя", description="Исключить участника из войса", emoji="🚪", value="kick"),
+            discord.SelectOption(label="Передать владение", description="Назначить нового владельца комнаты", emoji="👑", value="transfer"),
+            discord.SelectOption(label="Удалить комнату", description="Удалить голосовой канал", emoji="❌", value="delete"),
+        ]
+        super().__init__(placeholder="Управление приватной комнатой", min_values=1, max_values=1, options=options, custom_id="room_settings_select_persistent")
+
+    async def callback(self, interaction: discord.Interaction):
+        choice = self.values[0]
+        user = interaction.user
+        voice_channel = user.voice.channel if user.voice else None
+
+        if not voice_channel:
+            return await interaction.response.send_message("❌ Вы должны находиться в своем голосовом канале!", ephemeral=True)
+
+        if not voice_channel.permissions_for(user).manage_channels and not user.guild_permissions.administrator:
+            return await interaction.response.send_message("❌ Вы не являетесь владельцем этой комнаты!", ephemeral=True)
+
+        if choice == "rename":
+            await interaction.response.send_modal(RenameModal(voice_channel))
+        elif choice == "limit":
+            await interaction.response.send_modal(LimitModal(voice_channel))
+        elif choice == "lock":
+            await interaction.response.defer(ephemeral=True)
+            await voice_channel.set_permissions(interaction.guild.default_role, connect=False)
+            await interaction.followup.send("🔒 Комната закрыта для всех.", ephemeral=True)
+        elif choice == "unlock":
+            await interaction.response.defer(ephemeral=True)
+            await voice_channel.set_permissions(interaction.guild.default_role, connect=True)
+            await interaction.followup.send("🔓 Комната открыта для всех.", ephemeral=True)
+        elif choice == "delete":
+            await interaction.response.defer(ephemeral=True)
+            await voice_channel.delete()
+            await interaction.followup.send("❌ Комната удалена.", ephemeral=True)
+        elif choice in ["revoke", "grant", "kick", "transfer"]:
+            view = TargetUserSelectView(voice_channel, choice)
+            await interaction.response.send_message("Выберите пользователя из списка ниже:", view=view, ephemeral=True)
+
+class RoomSettingsView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(RoomSettingsSelect())
 
 # --- ON_READY ---
 @bot.event
 async def on_ready():
-    print(f"🤖 Авторизован как: {bot.user.name} (ID: {bot.user.id})")
-    try:
-        bot.add_view(CreateRoomButtonView())
-    except Exception:
-        pass
-    
-    try:
-        await bot.load_extension("cogs.shop")
-        print("✅ Коги успешно загружены!")
-    except Exception:
-        pass
+    print(f"🤖 Основной бот запущен как: {bot.user.name} (ID: {bot.user.id})")
+    bot.add_view(CreateRoomView())
+    bot.add_view(RoomSettingsView())
 
     try:
         synced = await bot.tree.sync()
-        print(f"🌲 Синхронизировано глобальных слэш-команд: {len(synced)}")
+        print(f"🌲 Синхронизировано слэш-команд: {len(synced)}")
     except Exception as e:
-        print(f"❌ Ошибка синхронизации команд: {e}")
+        print(f"❌ Ошибка синхронизации слэш-команд: {e}")
 
-# --- СОБЫТИЙНОЕ ЛОГИРОВАНИЕ (БЕЗ УЧЁТА БОТОВ) ---
-
+# --- ПЕРЕХВАТ СОБЫТИЙ СЕРВЕРА (БОТЫ ИГНОРИРУЮТСЯ) ---
 @bot.event
 async def on_message(message: discord.Message):
-    if message.author.bot or not message.guild:
+    if not message.guild or message.author.bot:
         return
 
-    # Запись в локальную базу данных
     time_str = get_msk_time()
     add_log_entry("Чат", f"#{message.channel.name}", f"{message.author.name} ({message.author.id})", f"Сообщение: {message.content}")
 
-    # Отправка в Discord-канал логов
     if message.channel.id != LOG_CHANNEL_ID:
         log_channel = message.guild.get_channel(LOG_CHANNEL_ID)
         if log_channel:
-            content_text = message.content or "*[Текста нет]*"
-            log_text = (
+            text = (
                 f"📅 **Время МСК:** `{time_str}`\n"
                 f"💬 **Новое сообщение**\n"
                 f"• **Автор:** {message.author.mention} (`{message.author.id}`)\n"
                 f"• **Канал:** {message.channel.mention}\n"
-                f"• **Текст:** {content_text}"
+                f"• **Текст:** {message.content or '*[Вложения/Медиа]*'}"
             )
             files = []
             if message.attachments:
@@ -226,303 +308,160 @@ async def on_message(message: discord.Message):
                     except Exception:
                         pass
             if files:
-                await log_channel.send(log_text, files=files)
+                await log_channel.send(text, files=files)
             else:
-                await log_channel.send(log_text)
+                await log_channel.send(text)
 
     await bot.process_commands(message)
 
 @bot.event
 async def on_message_delete(message: discord.Message):
-    if message.author.bot or not message.guild:
+    if not message.guild or message.author.bot:
         return
 
     time_str = get_msk_time()
-    add_log_entry("Удаление сообщений", f"#{message.channel.name}", f"{message.author.name} ({message.author.id})", f"Удалено: {message.content or '[Медиа/Файл]'}")
-    
-    log_channel = message.guild.get_channel(LOG_CHANNEL_ID)
-    if log_channel:
-        await log_channel.send(
-            f"📅 **Время МСК:** `{time_str}`\n"
-            f"🗑️ **Сообщение удалено**\n"
-            f"• **Автор:** {message.author.mention} (`{message.author.id}`)\n"
-            f"• **Канал:** {message.channel.mention}\n"
-            f"• **Текст:** {message.content or '*[Пусто / Медиа]*'}"
-        )
+    mod_str = f"{message.author.name} ({message.author.id})"
+    try:
+        async for entry in message.guild.audit_logs(limit=2, action=discord.AuditLogAction.message_delete):
+            if entry.target.id == message.author.id and not entry.user.bot:
+                mod_str = f"{entry.user.name} ({entry.user.id})"
+                break
+    except Exception:
+        pass
 
-@bot.event
-async def on_raw_message_delete(payload):
-    if payload.cached_message and payload.cached_message.author.bot:
-        return
-    if payload.cached_message:
-        return
-
-    time_str = get_msk_time()
-    target_channel = bot.get_channel(payload.channel_id)
-    ch_name = f"#{target_channel.name}" if target_channel else f"<#{payload.channel_id}>"
-    add_log_entry("Удаление сообщений", ch_name, "Система (очистка)", f"Удалено сообщение ID: {payload.message_id}")
+    add_log_entry("Удаление сообщений", f"#{message.channel.name}", mod_str, f"Содержимое: {message.content or '*[Пусто/Медиа]*'}")
 
 @bot.event
 async def on_message_edit(before: discord.Message, after: discord.Message):
-    if before.author.bot or before.content == after.content or not before.guild:
+    if not before.guild or before.author.bot or before.content == after.content:
         return
 
-    time_str = get_msk_time()
-    add_log_entry("Редактирование", f"#{before.channel.name}", f"{before.author.name} ({before.author.id})", f"Было: {before.content} | Стало: {after.content}")
-
-    log_channel = before.guild.get_channel(LOG_CHANNEL_ID)
-    if log_channel:
-        await log_channel.send(
-            f"📅 **Время МСК:** `{time_str}`\n"
-            f"✏️ **Сообщение отредактировано**\n"
-            f"• **Автор:** {before.author.mention}\n"
-            f"• **Канал:** {before.channel.mention}\n"
-            f"• **Было:** {before.content or '*[Пусто]*'}\n"
-            f"• **Стало:** {after.content or '*[Пусто]*'}"
-        )
+    add_log_entry(
+        "Редактирование",
+        f"#{before.channel.name}",
+        f"{before.author.name} ({before.author.id})",
+        f"Было: {before.content} | Стало: {after.content}"
+    )
 
 @bot.event
 async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
     if member.bot:
         return
 
-    time_str = get_msk_time()
-    log_channel = member.guild.get_channel(LOG_CHANNEL_ID)
-
+    u_tag = f"{member.name} ({member.id})"
     if before.channel is None and after.channel is not None:
-        add_log_entry("Войс", f"{member.name} ({member.id})", "Сам участник", f"Подключился к каналу {after.channel.name}")
-        if log_channel:
-            await log_channel.send(
-                f"📅 **Время МСК:** `{time_str}`\n"
-                f"🔊 **Подключение к войсу**\n• **Участник:** {member.mention}\n• **Канал:** **{after.channel.name}**"
-            )
+        add_log_entry("Войс", u_tag, member.name, f"Подключился к «{after.channel.name}»")
     elif before.channel is not None and after.channel is None:
-        add_log_entry("Войс", f"{member.name} ({member.id})", "Сам участник", f"Покинул канал {before.channel.name}")
-        if log_channel:
-            await log_channel.send(
-                f"📅 **Время МСК:** `{time_str}`\n"
-                f"🔇 **Выход из войса**\n• **Участник:** {member.mention}\n• **Канал:** **{before.channel.name}**"
-            )
+        add_log_entry("Войс", u_tag, member.name, f"Покинул «{before.channel.name}»")
     elif before.channel != after.channel:
-        add_log_entry("Войс", f"{member.name} ({member.id})", "Сам участник", f"Перешёл: {before.channel.name} ➔ {after.channel.name}")
-        if log_channel:
-            await log_channel.send(
-                f"📅 **Время МСК:** `{time_str}`\n"
-                f"🔀 **Перемещение в войсе**\n• **Участник:** {member.mention}\n• **Маршрут:** **{before.channel.name}** ➡️ **{after.channel.name}**"
-            )
+        add_log_entry("Войс", u_tag, member.name, f"Перешел: «{before.channel.name}» ➔ «{after.channel.name}»")
 
-@bot.event
-async def on_member_join(member: discord.Member):
-    if member.bot:
-        return
-    time_str = get_msk_time()
-    add_log_entry("Участники", f"{member.name} ({member.id})", "Система", "Вход на сервер")
-    log_channel = member.guild.get_channel(LOG_CHANNEL_ID)
-    if log_channel:
-        await log_channel.send(
-            f"📅 **Время МСК:** `{time_str}`\n"
-            f"📥 **Новый участник**\n• **Пользователь:** {member.mention} (`{member.id}`)"
-        )
+# --- УСТАНОВКА МЕНЮ ПРИВАТОК ---
+@bot.tree.command(name="setup_create", description="Отправить карточку создания приватных комнат")
+@app_commands.checks.has_permissions(administrator=True)
+async def slash_setup_create(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="✨ Создание приватной комнаты",
+        description="Нажмите на кнопку ниже, чтобы мгновенно создать свою комнату и гибко управлять ею.",
+        color=discord.Color.from_rgb(217, 78, 47)
+    )
+    await interaction.channel.send(embed=embed, view=CreateRoomView())
+    await interaction.response.send_message("✅ Меню создания комнат успешно выставлено!", ephemeral=True)
 
-@bot.event
-async def on_member_remove(member: discord.Member):
-    if member.bot:
-        return
+@bot.tree.command(name="setup_settings", description="Отправить панель управления приватными комнатами")
+@app_commands.checks.has_permissions(administrator=True)
+async def slash_setup_settings(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="⚙️ Управление приватной комнатой",
+        description="Используйте выпадающее меню ниже для изменения названия, лимита и доступов своей комнаты.",
+        color=discord.Color.from_rgb(40, 40, 40)
+    )
+    await interaction.channel.send(embed=embed, view=RoomSettingsView())
+    await interaction.response.send_message("✅ Панель настроек комнат успешно выставлена!", ephemeral=True)
 
-    time_str = get_msk_time()
-    moderator = None
-    reason = "Самостоятельный выход"
-    try:
-        async for entry in member.guild.audit_logs(limit=2, action=discord.AuditLogAction.kick):
-            if entry.target.id == member.id:
-                moderator = entry.user
-                reason = entry.reason or "Причина не указана"
-                break
-    except Exception:
-        pass
+@bot.command(name="setup_create")
+@commands.has_permissions(administrator=True)
+async def prefix_setup_create(ctx):
+    embed = discord.Embed(
+        title="✨ Создание приватной комнаты",
+        description="Нажмите на кнопку ниже, чтобы создать комнату.",
+        color=discord.Color.from_rgb(217, 78, 47)
+    )
+    await ctx.send(embed=embed, view=CreateRoomView())
 
-    log_channel = member.guild.get_channel(LOG_CHANNEL_ID)
-    if moderator and not moderator.bot:
-        add_log_entry("Кик", f"{member.name} ({member.id})", moderator.name, reason)
-        if log_channel:
-            await log_channel.send(
-                f"📅 **Время МСК:** `{time_str}`\n"
-                f"👢 **Участник изгнан (Кик)**\n"
-                f"• **Пользователь:** {member.mention} (`{member.id}`)\n"
-                f"• **Выгнал:** {moderator.mention}\n"
-                f"• **Причина:** {reason}"
-            )
-    else:
-        add_log_entry("Участники", f"{member.name} ({member.id})", "Система", "Покинул сервер")
-        if log_channel:
-            await log_channel.send(
-                f"📅 **Время МСК:** `{time_str}`\n"
-                f"📤 **Участник покинул сервер**\n• **Пользователь:** {member.mention} (`{member.id}`)"
-            )
+@bot.command(name="setup_settings")
+@commands.has_permissions(administrator=True)
+async def prefix_setup_settings(ctx):
+    embed = discord.Embed(
+        title="⚙️ Управление приватной комнатой",
+        description="Используйте меню ниже для изменения параметров.",
+        color=discord.Color.from_rgb(40, 40, 40)
+    )
+    await ctx.send(embed=embed, view=RoomSettingsView())
 
-@bot.event
-async def on_member_update(before: discord.Member, after: discord.Member):
-    if before.bot:
-        return
-
-    time_str = get_msk_time()
-    log_channel = before.guild.get_channel(LOG_CHANNEL_ID)
-
-    # Логирование ролей
-    if before.roles != after.roles:
-        added = [r for r in after.roles if r not in before.roles]
-        removed = [r for r in before.roles if r not in after.roles]
-        mod_name = "Система / Бот"
-        mod_mention = "Неизвестно"
-
-        try:
-            async for entry in before.guild.audit_logs(limit=2, action=discord.AuditLogAction.member_role_update):
-                if entry.target.id == after.id and not entry.user.bot:
-                    mod_name = entry.user.name
-                    mod_mention = entry.user.mention
-                    break
-        except Exception:
-            pass
-
-        for r in added:
-            add_log_entry("Роли", f"{after.name} ({after.id})", mod_name, f"Выдана роль: {r.name}")
-            if log_channel:
-                await log_channel.send(
-                    f"📅 **Время МСК:** `{time_str}`\n"
-                    f"👑 **Роль назначена**\n• **Участник:** {after.mention}\n• **Роль:** {r.mention}\n• **Выдал:** {mod_mention}"
-                )
-        for r in removed:
-            add_log_entry("Роли", f"{after.name} ({after.id})", mod_name, f"Снята роль: {r.name}")
-            if log_channel:
-                await log_channel.send(
-                    f"📅 **Время МСК:** `{time_str}`\n"
-                    f"❌ **Роль снята**\n• **Участник:** {after.mention}\n• **Роль:** {r.mention}\n• **Снял:** {mod_mention}"
-                )
-
-# --- СЛЭШ-КОМАНДЫ МОДЕРАЦИИ С ЗАПИСЬЮ ИНИЦИАТОРА ---
-
-@bot.tree.command(name="mute_user", description="Замутить пользователя и выдать роль")
+# --- МОДЕРИРОВАНИЕ: СЛЭШ-КОМАНДЫ С ИНИЦИАТОРОМ ---
+@bot.tree.command(name="mute_user", description="Замутить участника на время (в минутах)")
 @app_commands.default_permissions(moderate_members=True)
-async def mute(interaction: discord.Interaction, member: discord.Member, minutes: int, reason: str = "Не указана"):
+async def mute_cmd(interaction: discord.Interaction, member: discord.Member, minutes: int, reason: str = "Не указана"):
     mute_role = interaction.guild.get_role(MUTE_ROLE_ID)
     if mute_role:
         await member.add_roles(mute_role, reason=f"Мут: {reason}")
-    
+
     duration = discord.utils.utcnow() + datetime.timedelta(minutes=minutes)
     await member.timeout(duration, reason=reason)
 
     add_log_entry("Мут", f"{member.name} ({member.id})", interaction.user.name, f"Срок: {minutes} мин. | Причина: {reason}")
+    await interaction.response.send_message(f"🔇 Участник {member.mention} замучен на {minutes} мин. Инициатор: {interaction.user.mention}")
 
-    log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-    if log_channel:
-        embed = discord.Embed(title="🔇 Выдан мут (таймаут)", color=discord.Color.dark_grey())
-        embed.add_field(name="📅 Дата и время (МСК)", value=f"`{get_msk_time()}`", inline=False)
-        embed.add_field(name="Пользователь", value=member.mention, inline=False)
-        embed.add_field(name="Выдал", value=interaction.user.mention, inline=False)
-        embed.add_field(name="Причина", value=reason, inline=False)
-        embed.add_field(name="До", value=duration.strftime('%d.%m.%Y %H:%M'), inline=False)
-        await log_channel.send(embed=embed)
-
-    await interaction.response.send_message(f"🔇 Пользователь {member.mention} замучен на {minutes} мин.", ephemeral=True)
-
-@bot.tree.command(name="unmute_user", description="Снять мут с пользователя")
+@bot.tree.command(name="unmute_user", description="Снять мут с участника")
 @app_commands.default_permissions(moderate_members=True)
-async def unmute(interaction: discord.Interaction, member: discord.Member, reason: str = "Не указана"):
+async def unmute_cmd(interaction: discord.Interaction, member: discord.Member, reason: str = "Не указана"):
     mute_role = interaction.guild.get_role(MUTE_ROLE_ID)
     if mute_role and mute_role in member.roles:
         await member.remove_roles(mute_role, reason=f"Снятие мута: {reason}")
-    
+
     await member.timeout(None, reason=reason)
-
     add_log_entry("Снятие мута", f"{member.name} ({member.id})", interaction.user.name, reason)
-
-    log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-    if log_channel:
-        embed = discord.Embed(title="🔊 Снят мут", color=discord.Color.green())
-        embed.add_field(name="📅 Дата и время (МСК)", value=f"`{get_msk_time()}`", inline=False)
-        embed.add_field(name="Пользователь", value=f"{member.mention} (`{member.id}`)", inline=False)
-        embed.add_field(name="Снял мут", value=interaction.user.mention, inline=False)
-        embed.add_field(name="Причина", value=reason, inline=False)
-        await log_channel.send(embed=embed)
-
-    await interaction.response.send_message(f"🔊 С пользователя {member.mention} снят мут.", ephemeral=True)
+    await interaction.response.send_message(f"🔊 Мут с {member.mention} успешно снят. Инициатор: {interaction.user.mention}")
 
 @bot.tree.command(name="ban_user", description="Забанить участника на сервере")
-@app_commands.describe(member="Участник", days="Срок бана в днях (0 - навсегда)", reason="Причина бана")
 @app_commands.default_permissions(ban_members=True)
-async def ban(interaction: discord.Interaction, member: discord.Member, days: int = 0, reason: str = "Не указана"):
-    duration_text = f"на {days} дн." if days > 0 else "навсегда"
-    full_reason = f"Срок: {duration_text} | Причина: {reason}"
-
-    try:
-        await member.send(f"⛔️ Вы были забанены на сервере **{interaction.guild.name}** ({duration_text}).\n• Причина: {reason}")
-    except discord.Forbidden:
-        pass
-
-    await member.ban(reason=full_reason)
-    add_log_entry("Бан", f"{member.name} ({member.id})", interaction.user.name, full_reason)
-
-    log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-    if log_channel:
-        embed = discord.Embed(title="🚫 Бан участника", color=discord.Color.red())
-        embed.add_field(name="📅 Дата и время (МСК)", value=f"`{get_msk_time()}`", inline=False)
-        embed.add_field(name="Пользователь", value=f"{member.mention} (`{member.id}`)", inline=False)
-        embed.add_field(name="Забанил", value=interaction.user.mention, inline=False)
-        embed.add_field(name="Срок", value=duration_text, inline=False)
-        embed.add_field(name="Причина", value=reason, inline=False)
-        await log_channel.send(embed=embed)
-
-    await interaction.response.send_message(f"⛔️ Пользователь {member.mention} забанен ({duration_text}).", ephemeral=True)
+async def ban_cmd(interaction: discord.Interaction, member: discord.Member, days: int = 0, reason: str = "Не указана"):
+    dur = f"на {days} дн." if days > 0 else "навсегда"
+    await member.ban(reason=f"Срок: {dur} | Инициатор: {interaction.user.name} | Причина: {reason}")
+    add_log_entry("Бан", f"{member.name} ({member.id})", interaction.user.name, f"{dur} | {reason}")
+    await interaction.response.send_message(f"⛔️ Участник {member.mention} забанен ({dur}).")
 
 @bot.tree.command(name="unban_user", description="Разбанить пользователя по ID")
 @app_commands.default_permissions(ban_members=True)
-async def unban(interaction: discord.Interaction, user_id: str, reason: str = "Не указана"):
+async def unban_cmd(interaction: discord.Interaction, user_id: str, reason: str = "Не указана"):
     try:
-        uid = int(user_id)
-        user = await bot.fetch_user(uid)
-    except Exception:
-        return await interaction.response.send_message("❌ Указан некорректный ID пользователя.", ephemeral=True)
-
-    try:
+        user = await bot.fetch_user(int(user_id))
         await interaction.guild.unban(user, reason=reason)
-    except discord.HTTPException:
-        return await interaction.response.send_message("❌ Не удалось разбанить (возможно, он не забанен).", ephemeral=True)
+        add_log_entry("Разбан", f"{user.name} ({user.id})", interaction.user.name, reason)
+        await interaction.response.send_message(f"🔓 Пользователь {user.mention} успешно разбанен.")
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Ошибка разбана: {e}", ephemeral=True)
 
-    add_log_entry("Разбан", f"{user.name} ({user.id})", interaction.user.name, reason)
-
-    log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-    if log_channel:
-        embed = discord.Embed(title="🔓 Пользователь разбанен", color=discord.Color.blue())
-        embed.add_field(name="📅 Дата и время (МСК)", value=f"`{get_msk_time()}`", inline=False)
-        embed.add_field(name="Пользователь", value=f"{user.mention} (`{user.id}`)", inline=False)
-        embed.add_field(name="Разбанил", value=interaction.user.mention, inline=False)
-        embed.add_field(name="Причина", value=reason, inline=False)
-        await log_channel.send(embed=embed)
-
-    await interaction.response.send_message(f"🔓 Пользователь {user.mention} успешно разбанен.", ephemeral=True)
-
-@bot.tree.command(name="kick", description="Изгнать участника с сервера")
-@app_commands.describe(member="Участник", reason="Причина кика")
+@bot.tree.command(name="kick", description="Выгнать участника с сервера")
 @app_commands.checks.has_permissions(kick_members=True)
-async def kick_command(interaction: discord.Interaction, member: discord.Member, reason: str = "Не указана"):
-    await member.kick(reason=reason)
+async def kick_cmd(interaction: discord.Interaction, member: discord.Member, reason: str = "Не указана"):
+    await member.kick(reason=f"Инициатор: {interaction.user.name} | {reason}")
     add_log_entry("Кик", f"{member.name} ({member.id})", interaction.user.name, reason)
-    await interaction.response.send_message(f"👢 {member.mention} был изгнан. Причина: {reason}")
+    await interaction.response.send_message(f"👢 Участник {member.mention} был изгнан.")
 
-@bot.tree.command(name="clear", description="Очистить сообщения")
-@app_commands.describe(amount="Количество сообщений для удаления")
+@bot.tree.command(name="clear", description="Очистить чат")
 @app_commands.checks.has_permissions(manage_messages=True)
-async def clear_command(interaction: discord.Interaction, amount: int):
+async def clear_cmd(interaction: discord.Interaction, amount: int):
     await interaction.response.defer(ephemeral=True)
     deleted = await interaction.channel.purge(limit=amount)
-    add_log_entry("Очистка чата", f"#{interaction.channel.name}", interaction.user.name, f"Удалено сообщений: {len(deleted)}")
+    add_log_entry("Очистка чата", f"#{interaction.channel.name}", interaction.user.name, f"Удалено: {len(deleted)}")
     await interaction.followup.send(f"🧹 Удалено сообщений: **{len(deleted)}**")
 
 @bot.tree.command(name="warn", description="Выдать варн")
 @app_commands.default_permissions(manage_roles=True)
-async def warn(interaction: discord.Interaction, member: discord.Member, reason: str = "Не указана"):
-    user_id = member.id
-    new_count = update_warns(user_id, 1)
+async def warn_cmd(interaction: discord.Interaction, member: discord.Member, reason: str = "Не указана"):
+    new_count = update_warns(member.id, 1)
 
     for level, role_id in WARN_ROLES.items():
         role = interaction.guild.get_role(role_id)
@@ -533,115 +472,123 @@ async def warn(interaction: discord.Interaction, member: discord.Member, reason:
                 await member.remove_roles(role)
 
     add_log_entry("Варн", f"{member.name} ({member.id})", interaction.user.name, f"Варн ({new_count}/3) | {reason}")
-
-    log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-    if log_channel:
-        embed = discord.Embed(title="⚠️ Выдан варн", color=discord.Color.gold())
-        embed.add_field(name="📅 Дата и время (МСК)", value=f"`{get_msk_time()}`", inline=False)
-        embed.add_field(name="Пользователь", value=member.mention, inline=True)
-        embed.add_field(name="Модератор", value=interaction.user.mention, inline=True)
-        embed.add_field(name="Причина", value=reason, inline=False)
-        embed.add_field(name="Всего варнов", value=f"{new_count}/3", inline=True)
-        await log_channel.send(embed=embed)
-
-    await interaction.response.send_message(f"⚠️ {member.mention} получил варн ({new_count}/3).")
+    await interaction.response.send_message(f"⚠️ {member.mention} получил варн ({new_count}/3). Причина: {reason}")
 
     if new_count >= 3:
-        cursor.execute("UPDATE warns SET count = 0 WHERE user_id = ?", (user_id,))
+        cursor.execute("UPDATE warns SET count = 0 WHERE user_id = ?", (member.id,))
         conn.commit()
-        for role_id in WARN_ROLES.values():
-            r = interaction.guild.get_role(role_id)
-            if r and r in member.roles:
-                await member.remove_roles(r)
-        
         await member.ban(reason="Автоматический бан за 3 варна")
-        add_log_entry("Бан", f"{member.name} ({member.id})", "Авто-бан (3 варна)", "Превышен лимит предупреждений")
+        add_log_entry("Бан", f"{member.name} ({member.id})", "Авто-бан (3 варна)", "Превышен лимит варнов")
 
 @bot.tree.command(name="unwarn", description="Снять варн")
 @app_commands.default_permissions(manage_roles=True)
-async def unwarn(interaction: discord.Interaction, member: discord.Member):
+async def unwarn_cmd(interaction: discord.Interaction, member: discord.Member):
     new_count = update_warns(member.id, -1)
-    
     for role_id in WARN_ROLES.values():
         role = interaction.guild.get_role(role_id)
         if role and role in member.roles:
             await member.remove_roles(role)
-            
+
     if new_count > 0 and new_count in WARN_ROLES:
         role_to_give = interaction.guild.get_role(WARN_ROLES[new_count])
         if role_to_give:
             await member.add_roles(role_to_give)
 
     add_log_entry("Снятие варна", f"{member.name} ({member.id})", interaction.user.name, f"Осталось: {new_count}/3")
-    await interaction.response.send_message(f"✅ С пользователя {member.mention} снят варн. Всего: {new_count}/3.")
+    await interaction.response.send_message(f"✅ С {member.mention} снят варн. Всего: {new_count}/3.")
 
-# --- КОМАНДЫ РОЛЕЙ РУКОВОДСТВА ---
-@bot.tree.command(name="gmod", description="Назначить Главного модератора")
+# --- НОВЫЕ ПОЛЕЗНЫЕ КОМАНДЫ МОДЕРАЦИИ ---
+@bot.tree.command(name="slowmode", description="Установить медленный режим для текущего канала")
+@app_commands.describe(seconds="Задержка между сообщениями в секундах (0 для отключения)")
+@app_commands.checks.has_permissions(manage_channels=True)
+async def slowmode(interaction: discord.Interaction, seconds: int):
+    await interaction.channel.edit(slowmode_delay=seconds)
+    add_log_entry("Каналы", f"#{interaction.channel.name}", interaction.user.name, f"Медленный режим: {seconds} сек.")
+    if seconds > 0:
+        await interaction.response.send_message(f"⏳ В канале установлен медленный режим: **{seconds} сек.**")
+    else:
+        await interaction.response.send_message("⏳ Медленный режим отключен.")
+
+@bot.tree.command(name="lock", description="Заблокировать отправку сообщений в текущем канале для всех")
+@app_commands.checks.has_permissions(manage_channels=True)
+async def lock_channel(interaction: discord.Interaction):
+    await interaction.channel.set_permissions(interaction.guild.default_role, send_messages=False)
+    add_log_entry("Безопасность", f"#{interaction.channel.name}", interaction.user.name, "Канал заблокирован (/lock)")
+    await interaction.response.send_message("🔒 Канал закрыт для отправки сообщений.")
+
+@bot.tree.command(name="unlock", description="Открыть канал для отправки сообщений")
+@app_commands.checks.has_permissions(manage_channels=True)
+async def unlock_channel(interaction: discord.Interaction):
+    await interaction.channel.set_permissions(interaction.guild.default_role, send_messages=True)
+    add_log_entry("Безопасность", f"#{interaction.channel.name}", interaction.user.name, "Канал открыт (/unlock)")
+    await interaction.response.send_message("🔓 Канал снова открыт для общения.")
+
+@bot.tree.command(name="userinfo", description="Посмотреть информацию об участнике")
 @app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin", "gmod")
-async def cmd_gmod(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "gmod", "add")
+async def userinfo(interaction: discord.Interaction, member: discord.Member = None):
+    target = member or interaction.user
+    roles = [r.mention for r in target.roles if r.name != "@everyone"]
+    roles_str = ", ".join(roles) if roles else "Нет ролей"
 
-@bot.tree.command(name="ungmod", description="Снять Главного модератора")
-@app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin", "gmod")
-async def cmd_ungmod(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "gmod", "remove")
+    created = target.created_at.strftime("%d.%m.%Y %H:%M")
+    joined = target.joined_at.strftime("%d.%m.%Y %H:%M") if target.joined_at else "Неизвестно"
 
-@bot.tree.command(name="gadmin", description="Назначить Главного администратора")
-@app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin")
-async def cmd_gadmin(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "gadmin", "add")
+    embed = discord.Embed(title=f"Досье: {target.display_name}", color=target.color)
+    embed.set_thumbnail(url=target.display_avatar.url)
+    embed.add_field(name="ID", value=f"`{target.id}`", inline=True)
+    embed.add_field(name="Бот?", value="Да" if target.bot else "Нет", inline=True)
+    embed.add_field(name="Дата регистрации", value=created, inline=False)
+    embed.add_field(name="Присоединился к серверу", value=joined, inline=False)
+    embed.add_field(name=f"Роли [{len(roles)}]", value=roles_str, inline=False)
 
-@bot.tree.command(name="ungadmin", description="Снять Главного администратора")
-@app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin")
-async def cmd_ungadmin(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "gadmin", "remove")
+    await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="admin", description="Назначить Администратора")
-@app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin")
-async def cmd_admin(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "admin", "add")
+# --- РАЗВЛЕКАТЕЛЬНЫЕ КОМАНДЫ ---
+import random
 
-@bot.tree.command(name="unadmin", description="Снять Администратора")
-@app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin")
-async def cmd_unadmin(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "admin", "remove")
+@bot.tree.command(name="coinflip", description="Подбросить монетку (Орёл или Решка)")
+async def coinflip(interaction: discord.Interaction):
+    res = random.choice(["🪙 Выпал **Орёл**!", "🪙 Выпала **Решка**!"])
+    await interaction.response.send_message(res)
 
-@bot.tree.command(name="mod", description="Назначить Модератора")
-@app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin", "gmod", "admin")
-async def cmd_mod(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "mod", "add")
+@bot.tree.command(name="roll", description="Случайное число от 1 до указанного максимума")
+@app_commands.describe(max_val="Максимальное число (по умолчанию 100)")
+async def roll(interaction: discord.Interaction, max_val: int = 100):
+    if max_val < 1:
+        return await interaction.response.send_message("❌ Число должно быть больше 0!", ephemeral=True)
+    val = random.randint(1, max_val)
+    await interaction.response.send_message(f"🎲 Вам выпало число: **{val}** (из {max_val})")
 
-@bot.tree.command(name="unmod", description="Снять Модератора")
-@app_commands.describe(member="Участник")
-@has_role_or_higher("gadmin", "gmod", "admin")
-async def cmd_unmod(interaction: discord.Interaction, member: discord.Member):
-    await handle_specific_role_slash(interaction, member, "mod", "remove")
+@bot.tree.command(name="poll", description="Создать голосование в чате с быстрыми реакциями")
+@app_commands.describe(question="Тема голосования")
+async def poll(interaction: discord.Interaction, question: str):
+    embed = discord.Embed(
+        title="📊 Голосование",
+        description=question,
+        color=discord.Color.blue()
+    )
+    embed.set_footer(text=f"Автор: {interaction.user.display_name}")
+    await interaction.response.send_message("✅ Голосование создано!", ephemeral=True)
+    msg = await interaction.channel.send(embed=embed)
+    await msg.add_reaction("👍")
+    await msg.add_reaction("👎")
 
-# --- СИНХРОНИЗАЦИЯ ЧАТА ---
-@bot.tree.command(name="sync_chat_history", description="Импортировать историю сообщений в лог-панель")
-@app_commands.describe(limit="Количество сообщений (по умолчанию 300)")
+# --- СИНХРОНИЗАЦИЯ ЧАТА В ВЕБ-ПАНЕЛЬ ---
+@bot.tree.command(name="sync_chat_history", description="Импортировать историю сообщений канала на сайт")
+@app_commands.describe(limit="Количество сообщений")
 @app_commands.checks.has_permissions(administrator=True)
-async def sync_chat_history(interaction: discord.Interaction, limit: int = 300):
+async def sync_history(interaction: discord.Interaction, limit: int = 200):
     await interaction.response.defer(ephemeral=True)
-    count = 0
-    async for msg in interaction.channel.history(limit=limit, oldest_first=True):
-        if msg.content and not msg.author.bot:
-            time_str = msg.created_at.strftime("%d.%m.%Y %H:%M:%S")
-            add_log_entry("Чат", f"#{interaction.channel.name}", f"{msg.author.name} ({msg.author.id})", f"Сообщение: {msg.content}")
-            count += 1
-    await interaction.followup.send(f"✅ Успешно импортировано **{count}** сообщений из #{interaction.channel.name}!")
+    c = 0
+    async for m in interaction.channel.history(limit=limit, oldest_first=True):
+        if not m.author.bot and m.content:
+            add_log_entry("Чат", f"#{interaction.channel.name}", f"{m.author.name} ({m.author.id})", m.content)
+            c += 1
+    await interaction.followup.send(f"✅ Импортировано **{c}** сообщений в панель логов!")
 
-# --- ЗАПУСК БОТА И WEB-ПАНЕЛИ ---
+# --- ЗАПУСК БОТА ---
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
-        print("❌ Ошибка: Переменная DISCORD_TOKEN не задана!")
+        print("❌ Ошибка: Переменная DISCORD_TOKEN не задана в Railway!")
     else:
         bot.run(DISCORD_TOKEN)
-        
