@@ -1,3 +1,5 @@
+import os
+import sqlite3
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -14,8 +16,26 @@ class CreateRoomModal(discord.ui.Modal, title="Создание приватно
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        guild = interaction.guild
         member = interaction.user
+
+        # Проверка блокировки доступа к созданию приваток через команду /private ban
+        db_path = "database.db"
+        if os.path.exists(db_path):
+            try:
+                conn = sqlite3.connect(db_path)
+                cur = conn.cursor()
+                cur.execute("SELECT value FROM settings WHERE key = ?", (f"priv_ban_{member.id}",))
+                ban_row = cur.fetchone()
+                conn.close()
+                if ban_row:
+                    return await interaction.response.send_message(
+                        f"❌ Вам заблокирован доступ к созданию приваток!\nПричина: **{ban_row[0]}**",
+                        ephemeral=True
+                    )
+            except Exception:
+                pass
+
+        guild = interaction.guild
         category = interaction.channel.category
 
         overwrites = {
@@ -216,4 +236,3 @@ class PrivatesCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(PrivatesCog(bot))
-    
