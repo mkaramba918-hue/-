@@ -30,7 +30,6 @@ WARN_ROLES = {
 }
 
 # --- ПОЛНАЯ ИЕРАРХИЯ РОЛЕЙ STAFF ---
-# Укажите реальные ID ролей с вашего сервера
 ROLE_IDS = {
     "owner": 1512597517966114946,       # 👑 Owner
     "co_owner": 1512597740494782666,    # ⭐ Co-Owner
@@ -473,7 +472,7 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
     if log_channel:
         await log_channel.send(
             f"📅 **Время МСК:** `{time_str}`\n"
-            f"✏️️ **Сообщение отредактировано**\n"
+            f"✏ **Сообщение отредактировано**\n"
             f"• **Автор:** {before.author.mention}\n"
             f"• **Канал:** {before.channel.mention}\n"
             f"• **Было:** {before.content or '*[Пусто]*'}\n"
@@ -957,6 +956,148 @@ async def clear_cmd(interaction: discord.Interaction, amount: int):
     await interaction.followup.send(f"🧹 Удалено сообщений: **{len(deleted)}**")
 
 # =========================================================
+# РАСШИРЕННЫЕ КОМАНДЫ (BLACK RUSSIA STYLE)
+# =========================================================
+
+# ЗАМОРОЗКА ПРАВ (/aban)
+@bot.tree.command(name="aban", description="Заморозить права пользователя на дискорд-сервере")
+@app_commands.describe(member="Участник", reason="Причина заморозки")
+@has_staff_role(*ADMIN_ROLES)
+async def aban_cmd(interaction: discord.Interaction, member: discord.Member, reason: str = "Заморозка прав"):
+    if member.top_role >= interaction.user.top_role and interaction.user != interaction.guild.owner:
+        return await interaction.response.send_message("❌ Нельзя заморозить права равному или старшему!", ephemeral=True)
+
+    for channel in interaction.guild.channels:
+        try:
+            await channel.set_permissions(member, send_messages=False, speak=False, connect=False)
+        except Exception:
+            pass
+
+    add_log_entry("Наказания", f"{member.name} ({member.id})", interaction.user.name, f"Заморозка прав (/aban) | {reason}")
+    await interaction.response.send_message(f"❄️ Права пользователя {member.mention} **заморожены**. Причина: {reason}")
+
+# ОЧИСТКА СООБЩЕНИЙ УЧАСТНИКА (/clear_member)
+@bot.tree.command(name="clear_member", description="Удаление сообщений определенного пользователя")
+@app_commands.describe(member="Участник", amount="Количество проверяемых сообщений (макс 100)")
+@has_staff_role(*MOD_ROLES)
+async def clear_member_cmd(interaction: discord.Interaction, member: discord.Member, amount: int = 50):
+    await interaction.response.defer(ephemeral=True)
+    deleted = await interaction.channel.purge(limit=min(amount, 100), check=lambda m: m.author.id == member.id)
+    add_log_entry("Очистка", f"#{interaction.channel.name}", interaction.user.name, f"Удалено {len(deleted)} сообщений от {member.name}")
+    await interaction.followup.send(f"🧹 Удалено **{len(deleted)}** сообщений от {member.mention}.")
+
+# УДАЛЕНИЕ ОДНОГО СООБЩЕНИЯ ПО ID (/clear_one)
+@bot.tree.command(name="clear_one", description="Удаление одного сообщения по ID")
+@app_commands.describe(message_id="ID сообщения")
+@has_staff_role(*MOD_ROLES)
+async def clear_one_cmd(interaction: discord.Interaction, message_id: str):
+    try:
+        msg = await interaction.channel.fetch_message(int(message_id))
+        await msg.delete()
+        await interaction.response.send_message(f"🗑️ Сообщение `{message_id}` удалено.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Не удалось найти или удалить сообщение: {e}", ephemeral=True)
+
+# СТАТИСТИКА МОДЕРАТОРА (/modstats)
+@bot.tree.command(name="modstats", description="Посмотреть статистику действий модератора")
+@app_commands.describe(moderator="Модератор (по умолчанию вы)")
+@has_staff_role(*ALL_STAFF_ROLES)
+async def modstats_cmd(interaction: discord.Interaction, moderator: discord.Member = None):
+    target = moderator or interaction.user
+    db = get_db_conn()
+    cur = db.cursor()
+    cur.execute("SELECT category, COUNT(*) FROM mod_logs WHERE moderator LIKE ? GROUP BY category", (f"%{target.name}%",))
+    stats = cur.fetchall()
+    db.close()
+
+    embed = discord.Embed(title=f"📊 Статистика работы: {target.display_name}", color=discord.Color.teal())
+    embed.set_thumbnail(url=target.display_avatar.url)
+    
+    total = 0
+    if stats:
+        for cat, count in stats:
+            embed.add_field(name=cat, value=f"**{count}** действий", inline=True)
+            total += count
+    else:
+        embed.description = "У данного сотрудника пока нет зафиксированных действий в логах."
+
+    embed.set_footer(text=f"Всего зафиксировано: {total} действий")
+    await interaction.response.send_message(embed=embed)
+
+# УПРАВЛЕНИЕ ДОСТУПОМ К ПРИВАТКАМ (/private ban / private unban / private owner)
+private_group = app_commands.Group(name="private", description="Управление приватными каналами")
+
+@private_group.command(name="ban", description="Заблокировать доступ участнику к созданию приватных комнат")
+@app_commands.describe(member="Участник", reason="Причина")
+@has_staff_role(*MOD_ROLES)
+async def priv_ban(interaction: discord.Interaction, member: discord.Member, reason: str = "Нарушение правил приваток"):
+    db = get_db_conn()
+    cur = db.cursor()
+    cur.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (f"priv_ban_{member.id}", reason))
+    db.commit()
+    db.close()
+    add_log_entry("Приватки", f"{member.name} ({member.id})", interaction.user.name, f"Бан приваток | {reason}")
+    await interaction.response.send_message(f"🚫 {member.mention} заблокирован доступ к созданию приваток. Причина: {reason}")
+
+@private_group.command(name="unban", description="Разблокировать доступ участнику к созданию приваток")
+@app_commands.describe(member="Участник")
+@has_staff_role(*MOD_ROLES)
+async def priv_unban(interaction: discord.Interaction, member: discord.Member):
+    db = get_db_conn()
+    cur = db.cursor()
+    cur.execute("DELETE FROM settings WHERE key = ?", (f"priv_ban_{member.id}",))
+    db.commit()
+    db.close()
+    await interaction.response.send_message(f"✅ Доступ к приватным комнатам для {member.mention} разблокирован.")
+
+@private_group.command(name="owner", description="Узнать владельца приватного голосового канала")
+@app_commands.describe(channel="Голосовой канал")
+@has_staff_role(*ALL_STAFF_ROLES)
+async def priv_owner(interaction: discord.Interaction, channel: discord.VoiceChannel):
+    from privates import active_private_channels
+    owner_id = active_private_channels.get(channel.id)
+    if owner_id:
+        await interaction.response.send_message(f"👑 Владелец канала **{channel.name}**: <@{owner_id}> (`{owner_id}`)")
+    else:
+        await interaction.response.send_message(f"ℹ️ Канал **{channel.name}** не зарегистрирован как активная приватная комната.")
+
+bot.tree.add_command(private_group)
+
+# УДАЛЕНИЕ ПРИВАТКИ ПО ID (/delprivate)
+@bot.tree.command(name="delprivate", description="Удалить приватную комнату по ID канала")
+@app_commands.describe(channel_id="ID голосового канала")
+@has_staff_role(*MOD_ROLES)
+async def delprivate_cmd(interaction: discord.Interaction, channel_id: str):
+    try:
+        ch = interaction.guild.get_channel(int(channel_id))
+        if isinstance(ch, discord.VoiceChannel):
+            await ch.delete()
+            from privates import active_private_channels
+            active_private_channels.pop(int(channel_id), None)
+            await interaction.response.send_message(f"🗑️ Голосовой канал `{channel_id}` удален.")
+        else:
+            await interaction.response.send_message("❌ Указанный ID не принадлежит голосовому каналу.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Ошибка удаления: {e}", ephemeral=True)
+
+# ВЫДАЧА МОНЕТ (/givecoins)
+@bot.tree.command(name="givecoins", description="Выдать монеты пользователю")
+@app_commands.describe(member="Участник", amount="Количество монет")
+@has_staff_role(*LEADERSHIP_ROLES)
+async def givecoins_cmd(interaction: discord.Interaction, member: discord.Member, amount: int):
+    conn_e = get_db_conn()
+    cur_e = conn_e.cursor()
+    cur_e.execute("INSERT OR IGNORE INTO users (user_id, points) VALUES (?, 0)", (member.id,))
+    cur_e.execute("UPDATE users SET points = points + ? WHERE user_id = ?", (amount, member.id))
+    conn_e.commit()
+    cur_e.execute("SELECT points FROM users WHERE user_id = ?", (member.id,))
+    total = cur_e.fetchone()[0]
+    conn_e.close()
+
+    add_log_entry("Экономика", f"{member.name} ({member.id})", interaction.user.name, f"Выдано {amount} монет (Баланс: {total})")
+    await interaction.response.send_message(f"💰 Руководитель {interaction.user.mention} выдал **{amount} монет** пользователю {member.mention}. Новый баланс: **{total}**.")
+
+# =========================================================
 # СИСТЕМА ЧСА (ЧЁРНЫЙ СПИСОК АДМИНИСТРАЦИИ - РУКОВОДСТВО)
 # =========================================================
 
@@ -1066,7 +1207,9 @@ async def cmd_ahelp(interaction: discord.Interaction):
             name="👤 Support / Поддержка",
             value=(
                 "`/ид [участник]` — досье, проверка варнов и ЧСА\n"
-                "`/userinfo [участник]` — профиль пользователя"
+                "`/userinfo [участник]` — профиль пользователя\n"
+                "`/modstats [модератор]` — просмотр статистики работы\n"
+                "`/private owner <канал>` — узнать владельца приватки"
             ),
             inline=False
         )
@@ -1082,7 +1225,11 @@ async def cmd_ahelp(interaction: discord.Interaction):
                 "`/warn <участник> [причина]` — выдать варн (бан при 3/3)\n"
                 "`/unwarn <участник>` — снять варн\n"
                 "`/warns_list` — список варнов на сервере\n"
-                "`/mutes_list` — список участников в муте"
+                "`/mutes_list` — список участников в муте\n"
+                "`/clear_member <участник> [кол-во]` — удалить сообщения игрока\n"
+                "`/clear_one <ID сообщения>` — удалить одно сообщение\n"
+                "`/private ban` / `/private unban` — доступ к созданию комнат\n"
+                "`/delprivate <ID канала>` — принудительно удалить приватку"
             ),
             inline=False
         )
@@ -1110,6 +1257,7 @@ async def cmd_ahelp(interaction: discord.Interaction):
                 "`/unban_user <ID> [причина]` — разбанить участника по ID\n"
                 "`/bans_list` — список забаненных\n"
                 "`/clear <кол-во>` — очистка сообщений чата\n"
+                "`/aban <участник> [причина]` — заморозить права участника\n"
                 "`/lock` / `/unlock` — закрыть/открыть текстовый канал\n"
                 "`/sync_chat_history [лимит]` — импорт чата на сайт"
             ),
@@ -1125,8 +1273,8 @@ async def cmd_ahelp(interaction: discord.Interaction):
                 "`/чса_добавить <участник> <причина>` — внести в ЧСА\n"
                 "`/чса_снять <ID>` — вынести из ЧСА\n"
                 "`/чса_лист` — список всех участников в ЧСА\n"
-                "`/gmod`, `/admin`, `/mod`... — выдача должностей Staff\n"
-                "`/setup_create` / `/setup_settings` — меню создания приваток"
+                "`/givecoins <участник> <кол-во>` — выдать валюту\n"
+                "`/gmod`, `/admin`, `/mod`... — выдача должностей Staff"
             ),
             inline=False
         )
